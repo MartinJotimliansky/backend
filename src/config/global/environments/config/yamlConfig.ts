@@ -5,8 +5,8 @@ import { registerAs } from '@nestjs/config';
 
 function getConfigPath() {
   const env = process.env.NODE_ENV === 'production' ? 'production' : 'development';
-  // Siempre busca desde la raíz del proyecto
-  return path.resolve(__dirname, '../../src/config', `${env}.yaml`);
+  // Busca el YAML en la raíz del proyecto, no en dist
+  return path.resolve(process.cwd(), 'src/config', `${env}.yaml`);
 }
 
 export default registerAs('yamlConfig', () => {

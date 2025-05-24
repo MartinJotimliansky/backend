@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import yamlConfig from './config/yamlConfig';
+import { AuthModule } from './auth/auth.module';
+import yamlConfig from './config/global/environments/config/yamlConfig';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import yamlConfig from './config/yamlConfig';
         };
       },
     }),
+    AuthModule,
   ],
   controllers: [],
   providers: [],

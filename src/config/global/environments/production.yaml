@@ -1,0 +1,16 @@
+database:
+  host: prod-db-host
+  port: 5432
+  username: postgres
+  password: Stinkistinki33_
+  name: nalgonwarriors_prod
+keycloak:
+  url: http://127.0.0.1:8080
+  realm: Nalgon-Warriors-Dev
+  clients:
+    login:
+      clientId: nalgon-login
+      secret: CKdNO8RH6Wpif4ns5wQqeLeMsK6RHyhD
+    admin:
+      clientId: nalgon-admin
+      secret: DSvnNbZlz9ZvXVQ72eyoO7e9QJ986EDv
