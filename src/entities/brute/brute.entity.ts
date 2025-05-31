@@ -1,5 +1,4 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
-import { User } from '../user.entity';
 import { Stat } from './stat.entity';
 import { BruteLevelChoice } from './brute_level_choice.entity';
 import { BruteSkill } from './brute_skill.entity';
@@ -7,6 +6,7 @@ import { BruteWeapon } from './brute_weapon.entity';
 import { BruteCosmetic } from './brute_cosmetic.entity';
 import { Purchase } from '../items/purchase.entity';
 import { Battle } from '../battle/battle.entity';
+import { User } from '../user.entity';
 
 @Entity('brutes')
 export class Brute {

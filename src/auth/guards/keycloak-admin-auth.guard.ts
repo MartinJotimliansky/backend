@@ -8,9 +8,14 @@ export class KeycloakAdminAuthGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    let authHeader = request.headers['authorization'];
+    if (!authHeader) {
       throw new UnauthorizedException('No token provided');
+    }
+    // Si el usuario no incluyó 'Bearer ', prepéndelo automáticamente
+    if (!authHeader.startsWith('Bearer ')) {
+      authHeader = 'Bearer ' + authHeader;
+      request.headers['authorization'] = authHeader;
     }
     const token = authHeader.split(' ')[1];
     const keycloakConfig = this.configService.get('yamlConfig.keycloak');
@@ -19,6 +24,7 @@ export class KeycloakAdminAuthGuard implements CanActivate {
     if (!decoded || decoded.azp !== adminClientId) {
       throw new UnauthorizedException('Invalid admin token');
     }
+    request['adminToken'] = token;
     return true;
   }
 }

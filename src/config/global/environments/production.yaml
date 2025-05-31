@@ -1,9 +1,9 @@
 database:
-  host: prod-db-host
+  host: localhost
   port: 5432
   username: postgres
   password: Stinkistinki33_
-  name: nalgonwarriors_prod
+  name: postgres
 keycloak:
   url: http://127.0.0.1:8080
   realm: Nalgon-Warriors-Dev

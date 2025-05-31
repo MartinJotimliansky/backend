@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Param, UnauthorizedException, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { ApiBody, ApiTags, ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiParam } from '@nestjs/swagger';
+import { ApiBody, ApiTags, ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -33,6 +33,7 @@ export class AuthController {
 
   @Post('change-password/:userId')
   @UseGuards(KeycloakAdminAuthGuard)
+  @ApiBearerAuth('Bearer')
   @ApiParam({ name: 'userId', description: 'ID del usuario en Keycloak' })
   @ApiBody({ type: ChangePasswordDto, description: 'Cambio de contraseña para un usuario (requiere userId de Keycloak)' })
   @ApiNoContentResponse({ description: 'Contraseña cambiada correctamente' })
@@ -41,6 +42,6 @@ export class AuthController {
     @Body() body: ChangePasswordDto,
     @Req() req: Request
   ): Promise<void> {
-    await this.authService.changePassword({ userId, newPassword: body.newPassword, req });
+    await this.authService.changePassword({ userId, body, req });
   }
 }

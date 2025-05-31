@@ -3,12 +3,19 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
-import { ChangePasswordDto } from './dto/change-password.dto';
 import { Request } from 'express';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { User } from '../entities/user.entity';
+import * as jwt from 'jsonwebtoken';
 
 @Injectable()
 export class AuthService {
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    @InjectRepository(User) private userRepository: Repository<User>,
+  ) {}
 
   async getAdminTokenFromRequest(req: Request): Promise<string> {
     const authHeader = req.headers['authorization'];
@@ -30,7 +37,23 @@ export class AuthService {
     const response = await axios.post(url, params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     });
+    // Sincroniza usuario local con el token de Keycloak
+    await this.syncLocalUserWithKeycloakToken(response.data.access_token, dto);
     return response.data;
+  }
+
+  private async syncLocalUserWithKeycloakToken(accessToken: string, dto: LoginDto) {
+    const decoded: any = jwt.decode(accessToken);
+    if (decoded && decoded.sub) {
+      let user = await this.userRepository.findOne({ where: { id: decoded.sub } });
+      if (!user) {
+        user = this.userRepository.create({
+          id: decoded.sub,
+          email: decoded.email,
+        });
+        await this.userRepository.save(user);
+      }
+    }
   }
 
   async signup(dto: SignupDto) {
@@ -72,15 +95,15 @@ export class AuthService {
     // Implementar recuperación usando Keycloak Admin API
   }
 
-  async changePassword({ userId, newPassword, req }: { userId: string; newPassword: string; req: Request }) {
+  async changePassword({ userId, body, req }: { userId: string; body: ChangePasswordDto; req: Request }) {
     const keycloak = this.configService.get('yamlConfig.keycloak');
-    // Obtener token de admin desde el middleware
-    const adminToken = await this.getAdminTokenFromRequest(req);
+    // Obtener token de admin desde el guard
+    const adminToken = (req as any)['adminToken'];
     // Cambiar contraseña (endpoint correcto)
     const url = `${keycloak.url}/admin/realms/${keycloak.realm}/users/${userId}/reset-password`;
     const payload = {
       type: 'password',
-      value: newPassword,
+      value: body.newPassword,
       temporary: false,
     };
     await axios.put(url, payload, {

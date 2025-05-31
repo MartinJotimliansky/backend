@@ -8,6 +8,13 @@ async function bootstrap() {
     .setTitle('Nalgon Warriors API')
     .setDescription('API para el juego tipo el bruto.es')
     .setVersion('1.0')
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      name: 'Authorization',
+      description: 'Introduce tu token admin de Keycloak: Bearer <token>'
+    }, 'Bearer')
     .build();
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('swagger', app, document);
