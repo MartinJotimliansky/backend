@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-@Entity('effect')
+@Entity('effects')
 export class Effect {
   @PrimaryGeneratedColumn()
   id: number;
@@ -17,10 +17,10 @@ export class Effect {
   @Column({ type: 'int' })
   value: number;
 
-  @Column({ type: 'int', default: 100 })
+  @Column({ type: 'int', default: 100, nullable: true })
   accuracy: number;
 
-  @Column({ type: 'boolean', default: false })
+  @Column({ type: 'boolean', default: false, nullable: true })
   is_passive: boolean;
 
   @CreateDateColumn({ type: 'timestamp' })

@@ -5,15 +5,15 @@ export class ShopItem {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ name: 'item_type' })
-  itemType: 'weapon' | 'cosmetic' | 'stat_boost' | 'skill';
+  @Column({ type: 'varchar', name: 'item_type' })
+  item_type: string;
 
-  @Column({ name: 'reference_id' })
-  referenceId: number;
+  @Column({ type: 'int', name: 'reference_id' })
+  reference_id: number;
 
-  @Column({ name: 'price_gold', nullable: true })
-  priceGold: number;
+  @Column({ type: 'int', name: 'price_gold', nullable: true })
+  price_gold: number;
 
-  @Column({ name: 'price_premium', nullable: true })
-  pricePremium: number;
+  @Column({ type: 'int', name: 'price_premium', nullable: true })
+  price_premium: number;
 }

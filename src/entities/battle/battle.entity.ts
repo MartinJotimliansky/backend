@@ -7,10 +7,10 @@ export class Battle {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => Brute, brute => brute.battlesAsAttacker)
+  @ManyToOne(() => Brute)
   brute_attacker: Brute;
 
-  @ManyToOne(() => Brute, brute => brute.battlesAsDefender)
+  @ManyToOne(() => Brute)
   brute_defender: Brute;
 
   @ManyToOne(() => Brute)

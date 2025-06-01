@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
 import { Brute } from './brute.entity';
 
 @Entity('stats')
@@ -6,21 +6,25 @@ export class Stat {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => Brute, brute => brute.stats)
-  brute: Brute;
+  @Column({ type: 'int', name: 'available_points', default: 0 })
+  available_points: number;
 
-  @Column({ default: 0 })
-  strength: number;
+  @Column({ type: 'int', default: 1 })
+  strenght: number;
 
-  @Column({ default: 0 })
+  @Column({ type: 'int', default: 1 })
   agility: number;
 
-  @Column({ default: 0 })
-  defense: number;
+  @Column({ type: 'int', default: 1 })
+  endurance: number;
 
-  @Column({ default: 0 })
-  luck: number;
+  @Column({ type: 'int', default: 1 })
+  intelligence: number;
 
-  @Column({ name: 'available_points', default: 0 })
-  availablePoints: number;
+  @Column({ type: 'int', default: 50 })
+  hp: number;
+
+  @ManyToOne(() => Brute)
+  @JoinColumn({ name: 'brute_id' })
+  brute: Brute;
 }

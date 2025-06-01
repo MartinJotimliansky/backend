@@ -1,13 +1,13 @@
 import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
-@Entity('level_experience')
+@Entity('level_experiences')
 export class LevelExperience {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ type: 'int' })
   level: number;
 
-  @Column()
+  @Column({ type: 'int' })
   experience: number;
 }

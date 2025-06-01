@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Req, UseGuards, Body, Post, BadRequestException, Patch } from '@nestjs/common';
+import { Controller, Get, Param, Req, UseGuards, Body, Post, BadRequestException, Patch, Delete } from '@nestjs/common';
 import { UserService } from 'src/services/user/user.service';
 import { KeycloakAdminAuthGuard } from '../../auth/guards/keycloak-admin-auth.guard';
 import { KeycloakLoginAuthGuard } from '../../auth/guards/keycloak-login-auth.guard';
@@ -6,6 +6,11 @@ import { Request } from 'express';
 import { ApiTags, ApiBearerAuth, ApiOkResponse, ApiOperation } from '@nestjs/swagger';
 import { UserResponseDto } from './dto/user-response.dto';
 import { CreateBruteDto } from './dto/create-brute.dto';
+import { BruteResponseDto } from './dto/brute-response.dto';
+import { Brute } from '../../entities/brute/brute.entity';
+import { Stat } from '../../entities/brute/stat.entity';
+import { BruteSkill } from '../../entities/brute/brute_skill.entity';
+import { BruteWeapon } from '../../entities/brute/brute_weapon.entity';
 
 @ApiTags('Users')
 @ApiBearerAuth('Bearer')
@@ -33,15 +38,6 @@ export class UserController {
     return this.userService.getUserById(userId, adminToken);
   }
 
-  @Get('debug-headers')
-  @ApiOperation({ summary: 'Debug headers', description: 'Devuelve los headers recibidos en la request para depuración.' })
-  async debugHeaders(@Req() req: Request) {
-    return {
-      headers: req.headers,
-      adminToken: (req as any)['adminToken'] || null,
-    };
-  }
-
   @Post('brutes')
   @UseGuards(KeycloakLoginAuthGuard)
   @ApiBearerAuth('Bearer')
@@ -61,5 +57,60 @@ export class UserController {
     console.log('User JWT:', userJwt.sub);
     if (!userJwt || !userJwt.sub) throw new BadRequestException('Usuario no autenticado');
     return this.userService.selectBrute(userJwt.sub, bruteId);
+  }
+
+  @Get('brutes/:bruteId')
+  @ApiOperation({ summary: 'Obtener bruto completo', description: 'Devuelve stats, habilidades y armas del bruto.' })
+  @ApiOkResponse({ type: BruteResponseDto })
+  async getBruteById(@Param('bruteId') bruteId: number): Promise<BruteResponseDto> {
+    // Buscar bruto y relaciones
+    const brute = await this.userService['bruteRepository'].findOne({
+      where: { id: bruteId },
+      relations: [
+        'stats',
+        'bruteSkills',
+        'bruteSkills.skill',
+        'bruteWeapons',
+        'bruteWeapons.weapon',
+      ],
+    });
+    if (!brute) throw new BadRequestException('Bruto no encontrado');
+    return {
+      id: brute.id,
+      name: brute.name,
+      level: brute.level,
+      xp: brute.xp,
+      gold: brute.gold,
+      stats: brute.stats?.[0] ?? null,
+      skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
+      weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
+    };
+  }
+
+  @Post('brutes/generate-10')
+  @ApiOperation({ summary: 'Generar 10 brutos randoms', description: 'Crea 10 brutos aleatorios para pruebas y los retorna.' })
+  async generate10Brutes() {
+    return this.userService.getBruteService().generateRandomBrutesForTesting();
+  }
+
+  @Get('brutes')
+  @ApiOperation({ summary: 'Obtener todos los brutos', description: 'Devuelve todos los brutos con sus relaciones principales.' })
+  @ApiOkResponse({ type: [BruteResponseDto] })
+  async getAllBrutes() {
+    return this.userService.getAllBrutes();
+  }
+
+  @Delete('brutes/:bruteId')
+  @ApiOperation({ summary: 'Borrar un bruto por ID', description: 'Elimina un bruto y todas sus relaciones por ID.' })
+  async deleteBruteById(@Param('bruteId') bruteId: number) {
+    await this.userService.deleteBruteById(bruteId);
+    return { message: 'Bruto eliminado' };
+  }
+
+  @Delete('brutes')
+  @ApiOperation({ summary: 'Borrar todos los brutos', description: 'Elimina todos los brutos y todas sus relaciones.' })
+  async deleteAllBrutes() {
+    await this.userService.deleteAllBrutes();
+    return { message: 'Todos los brutos eliminados' };
   }
 }

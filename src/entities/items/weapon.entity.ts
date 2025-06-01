@@ -1,6 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-@Entity('weapon')
+@Entity('weapons')
 export class Weapon {
   @PrimaryGeneratedColumn()
   id: number;
@@ -32,9 +32,6 @@ export class Weapon {
   @Column('int', { array: true, default: () => "'{}'" })
   effect_ids: number[];
 
-  @CreateDateColumn({ type: 'timestamp' })
-  created_at: Date;
-
-  @UpdateDateColumn({ type: 'timestamp' })
-  updated_at: Date;
+  @Column({ type: 'int', default: 0 })
+  power_value: number;
 }

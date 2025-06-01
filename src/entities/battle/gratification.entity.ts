@@ -5,15 +5,15 @@ export class Gratification {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column()
+  @Column({ type: 'varchar' })
   name: string;
 
-  @Column()
-  type: 'stat_boost' | 'skill' | 'passive';
+  @Column({ type: 'varchar' })
+  type: string;
 
-  @Column({ name: 'min_level', default: 1 })
-  minLevel: number;
+  @Column({ type: 'int', name: 'min_level', default: 1 })
+  min_level: number;
 
   @Column({ type: 'jsonb', name: 'value_json' })
-  valueJson: any;
+  value_json: any;
 }

@@ -10,9 +10,9 @@ export class BruteSkill {
   @ManyToOne(() => Brute, brute => brute.bruteSkills)
   brute: Brute;
 
-  @ManyToOne(() => Skill)
+  @ManyToOne(() => Skill, { nullable: false })
   skill: Skill;
 
-  @Column({ name: 'selected_trigger', nullable: true })
-  selectedTrigger: string;
+  @Column({ name: 'selected_trigger', type: 'text', nullable: true })
+  selectedTrigger: string | null;
 }

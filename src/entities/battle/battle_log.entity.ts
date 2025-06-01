@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, ManyToOne, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, ManyToOne, Column, JoinColumn } from 'typeorm';
 import { Battle } from './battle.entity';
 
 @Entity('battle_logs')
@@ -7,14 +7,15 @@ export class BattleLog {
   id: number;
 
   @ManyToOne(() => Battle, battle => battle.logs)
+  @JoinColumn({ name: 'battleId' })
   battle: Battle;
 
-  @Column({ name: 'turn_number' })
-  turnNumber: number;
+  @Column({ type: 'int', name: 'turn_number' })
+  turn_number: number;
 
-  @Column({ name: 'action_type' })
-  actionType: string;
+  @Column({ type: 'varchar', name: 'action_type' })
+  action_type: string;
 
-  @Column()
+  @Column({ type: 'varchar' })
   description: string;
 }

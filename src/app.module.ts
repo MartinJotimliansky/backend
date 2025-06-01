@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './services/user/user.module';
+import { BackofficeModule } from './services/backoffice/backoffice.module';
 import yamlConfig from './config/global/environments/config/yamlConfig';
 
 @Module({
@@ -30,6 +31,7 @@ import yamlConfig from './config/global/environments/config/yamlConfig';
     }),
     AuthModule,
     UserModule,
+    BackofficeModule,
   ],
   controllers: [],
   providers: [],

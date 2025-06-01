@@ -1,11 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { Stat } from './stat.entity';
 import { BruteLevelChoice } from './brute_level_choice.entity';
 import { BruteSkill } from './brute_skill.entity';
 import { BruteWeapon } from './brute_weapon.entity';
 import { BruteCosmetic } from './brute_cosmetic.entity';
 import { Purchase } from '../items/purchase.entity';
-import { Battle } from '../battle/battle.entity';
 import { User } from '../user.entity';
 
 @Entity('brutes')
@@ -13,20 +12,21 @@ export class Brute {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => User, user => user.brutes)
-  user: User;
-
-  @Column()
+  @Column({ type: 'varchar' })
   name: string;
 
-  @Column({ default: 1 })
+  @Column({ type: 'int', default: 1 })
   level: number;
 
-  @Column({ default: 0 })
+  @Column({ type: 'int', default: 0 })
   xp: number;
 
-  @Column({ default: 0 })
+  @Column({ type: 'int', default: 0 })
   gold: number;
+
+  @ManyToOne(() => User, user => user.brutes)
+  @JoinColumn({ name: 'userId' })
+  user: User;
 
   @OneToMany(() => Stat, stat => stat.brute)
   stats: Stat[];
@@ -45,10 +45,4 @@ export class Brute {
 
   @OneToMany(() => Purchase, purchase => purchase.brute)
   purchases: Purchase[];
-
-  @OneToMany(() => Battle, battle => battle.brute_attacker)
-  battlesAsAttacker: Battle[];
-
-  @OneToMany(() => Battle, battle => battle.brute_defender)
-  battlesAsDefender: Battle[];
 }
