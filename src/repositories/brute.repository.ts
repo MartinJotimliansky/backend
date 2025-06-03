@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, LessThanOrEqual } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Brute } from '../entities/brute/brute.entity';
 import { User } from '../entities/user.entity';
 import { Stat } from '../entities/brute/stat.entity';
