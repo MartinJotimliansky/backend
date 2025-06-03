@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Param, UnauthorizedException, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Param, UnauthorizedException, Req, UseGuards, ValidationPipe } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { ApiBody, ApiTags, ApiOkResponse, ApiCreatedResponse, ApiNoContentResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
@@ -11,24 +11,36 @@ import { KeycloakAdminAuthGuard } from './guards/keycloak-admin-auth.guard';
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
-
-  @Post('login')
-  @ApiBody({ type: LoginDto, description: 'Login con usuario y contraseña usando x-www-form-urlencoded' })
+  constructor(private readonly authService: AuthService) {}  @Post('login')
+  @ApiBody({ type: LoginDto, description: 'Login con usuario y contraseña' })
   @ApiOkResponse({ type: LoginResponseDto })
-  async login(@Body() body: LoginDto) {
+  async login(
+    @Body(new ValidationPipe({
+      transform: true,
+      whitelist: true,
+      validateCustomDecorators: true
+    })) body: LoginDto
+  ) {
     try {
+      console.log('Controller - Recibiendo login:', { 
+        username: body.username, 
+        password: '****',
+        bodyType: typeof body,
+        rawBody: JSON.stringify(body)
+      });
+      
       return await this.authService.login(body);
     } catch (err) {
-      throw new UnauthorizedException('Invalid credentials');
+      console.error('Controller - Error en login:', err);
+      throw new UnauthorizedException(err.message || 'Credenciales inválidas');
     }
   }
-
   @Post('signup')
   @ApiBody({ type: SignupDto, description: 'Registro de usuario usando Keycloak' })
   @ApiCreatedResponse({ description: 'Usuario creado correctamente' })
   async signup(@Body() body: SignupDto) {
-    await this.authService.signup(body);
+    console.log('Datos recibidos en el controlador:', body);
+    return await this.authService.signup(body);
   }
 
   @Post('change-password/:userId')

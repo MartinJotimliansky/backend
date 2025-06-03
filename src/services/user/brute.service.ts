@@ -1,6 +1,6 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger, InternalServerErrorException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual } from 'typeorm';
+import { Repository, LessThanOrEqual, In } from 'typeorm';
 import { Brute } from '../../entities/brute/brute.entity';
 import { User } from '../../entities/user.entity';
 import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
@@ -12,6 +12,8 @@ import { BruteSkill } from '../../entities/brute/brute_skill.entity';
 
 @Injectable()
 export class BruteService {
+  private readonly logger = new Logger(BruteService.name);
+
   constructor(
     @InjectRepository(User) private userRepository: Repository<User>,
     @InjectRepository(Brute) private bruteRepository: Repository<Brute>,
@@ -24,26 +26,45 @@ export class BruteService {
   ) {}
 
   async createBruteForUser(userId: string, name: string) {
-    const user = await this.getUserWithBrutes(userId);
-    this.validateBruteLimit(user);
-    const config = await this.getBrutoConfig();
-    const totalPower = this.getRandomPower(config);
-    const numStats = this.getRandomStatCount(config);
-    const stats = this.generateStats(numStats);
-    const hpRandom = this.getRandomHp(config);
-    const hp = config.base_hp + hpRandom;
-    const remainingPower = this.calculateRemainingPower(totalPower, numStats, hpRandom);
-
-    const brute = await this.createBruteEntity(name, user);
-    await this.createStatEntity(stats, hp, brute);
-
     try {
-      await this.assignWeaponOrSkill(brute, config, remainingPower);
-    } catch (error) {
-      console.error('Error assigning weapon/skill:', error);
-    }
+      this.logger.debug(`Iniciando creación de bruto para usuario ${userId}`);
+      
+      const user = await this.getUserWithBrutes(userId);
+      this.validateBruteLimit(user);
+      
+      const config = await this.getBrutoConfig();
+      const totalPower = this.getRandomPower(config);
+      
+      this.logger.debug(`Configuración obtenida. Poder total: ${totalPower}`);
+      
+      const numStats = this.getRandomStatCount(config);
+      const stats = this.generateStats(numStats);
+      const hpRandom = this.getRandomHp(config);
+      const hp = config.base_hp + hpRandom;
+      const remainingPower = this.calculateRemainingPower(totalPower, numStats, hpRandom);
+      
+      this.logger.debug(`Stats generados. HP: ${hp}, Poder restante: ${remainingPower}`);
 
-    return brute;
+      const brute = await this.createBruteEntity(name, user);
+      await this.createStatEntity(stats, hp, brute);
+
+      await this.assignWeaponOrSkill(brute, config, remainingPower);
+      
+      this.logger.debug(`Bruto creado exitosamente con ID: ${brute.id}`);
+      
+      // Cargar las relaciones para devolver el objeto completo
+      return await this.bruteRepository.findOne({
+        where: { id: brute.id },
+        relations: ['stats', 'bruteSkills', 'bruteSkills.skill', 'bruteWeapons', 'bruteWeapons.weapon']
+      });
+
+    } catch (error) {
+      this.logger.error(`Error al crear bruto: ${error.message}`, error.stack);
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new InternalServerErrorException('Error al crear el bruto');
+    }
   }
 
   private async assignWeaponOrSkill(brute: Brute, config: BrutoConfig, remainingPower: number) {
@@ -103,7 +124,10 @@ export class BruteService {
   }
 
   private validateBruteLimit(user: User) {
-    if (user.brutes && user.brutes.length >= 500) throw new BadRequestException('Máximo 50 brutos por usuario');
+    const MAX_BRUTES = 100;
+    if (user.brutes && user.brutes.length >= MAX_BRUTES) {
+      throw new BadRequestException(`Máximo ${MAX_BRUTES} brutos por usuario`);
+    }
   }
 
   private async getBrutoConfig(): Promise<BrutoConfig> {
@@ -169,15 +193,161 @@ export class BruteService {
    * Genera 10 brutos randoms para pruebas y los retorna como array.
    */
   async generateRandomBrutesForTesting(): Promise<Brute[]> {
-    // Busca el primer usuario existente
     const user = await this.userRepository.findOne({ where: {} });
     if (!user) throw new Error('No hay usuarios en la base de datos');
+    
     const brutes: Brute[] = [];
     for (let i = 0; i < 10; i++) {
       const name = `TestBruto_${Date.now()}_${i}`;
       const brute = await this.createBruteForUser(user.id, name);
-      brutes.push(brute);
+      if (brute) {
+        brutes.push(brute);
+      }
     }
     return brutes;
+  }
+
+  async getBruteById(bruteId: number): Promise<Brute | null> {
+    return this.bruteRepository.findOne({
+      where: { id: bruteId },
+      relations: [
+        'stats',
+        'bruteSkills',
+        'bruteSkills.skill',
+        'bruteWeapons',
+        'bruteWeapons.weapon',
+        'user'
+      ]
+    });
+  }
+
+  async deleteBrute(brute: Brute) {
+    await this.bruteRepository.manager.transaction(async manager => {
+      await manager.delete('brute_level_choices', { brute: brute.id });
+      await manager.delete('brute_skills', { brute: brute.id });
+      await manager.delete('brute_weapons', { brute: brute.id });
+      await manager.delete('brute_cosmetics', { brute: brute.id });
+      await manager.delete('purchases', { brute: brute.id });
+      await manager.delete('stats', { brute: brute.id });
+      await manager.delete('brutes', { id: brute.id });
+    });
+  }
+
+  async deleteAllBrutes() {
+    await this.bruteRepository.manager.transaction(async manager => {
+      await manager.query('DELETE FROM brute_level_choices');
+      await manager.query('DELETE FROM brute_skills');
+      await manager.query('DELETE FROM brute_weapons');
+      await manager.query('DELETE FROM brute_cosmetics');
+      await manager.query('DELETE FROM purchases');
+      await manager.query('DELETE FROM stats');
+      await manager.query('DELETE FROM brutes');
+    });
+  }
+
+  async getRandomOpponents(bruteId: number, count: number): Promise<Brute[]> {
+    try {
+        this.logger.debug(`[getRandomOpponents] Starting search for opponents. BruteId: ${bruteId}, Count: ${count}`);
+        
+        const brute = await this.bruteRepository.findOne({
+            where: { id: bruteId },
+            relations: ['user']
+        });
+
+        if (!brute) {
+            this.logger.error(`[getRandomOpponents] Brute not found with id: ${bruteId}`);
+            throw new BadRequestException('Bruto no encontrado');
+        }
+
+        this.logger.debug(`[getRandomOpponents] Found brute: ${brute.id}, Level: ${brute.level}, UserId: ${brute.user.id}`);
+
+        // Obtener brutos del mismo nivel, excluyendo al bruto actual y los del mismo usuario
+        const sameLevel = await this.bruteRepository
+            .createQueryBuilder('brute')
+            .select('brute.id')
+            .addSelect('RANDOM()', 'rand')
+            .leftJoin('brute.user', 'user')
+            .where('brute.level = :level', { level: brute.level })
+            .andWhere('brute.id != :bruteId', { bruteId })
+            .andWhere('user.id != :userId', { userId: brute.user.id })
+            .orderBy('rand')
+            .take(count)
+            .getRawMany();
+
+        this.logger.debug('[getRandomOpponents] Executing same level query...');
+        
+        const sameLevelBrutes = await this.bruteRepository.find({
+            where: { id: In(sameLevel.map(b => b.brute_id)) },
+            relations: [
+                'stats',
+                'bruteSkills',
+                'bruteSkills.skill',
+                'bruteWeapons',
+                'bruteWeapons.weapon',
+                'user'
+            ]
+        });
+        
+        this.logger.debug(`[getRandomOpponents] Found ${sameLevelBrutes.length} opponents of same level`);
+
+        if (sameLevelBrutes.length < count) {
+            this.logger.debug(`[getRandomOpponents] Not enough same-level opponents, searching nearby levels...`);
+            const remainingCount = count - sameLevelBrutes.length;
+            const existingIds = [...sameLevelBrutes.map(b => b.id), bruteId];
+
+            const nearLevelIds = await this.bruteRepository
+                .createQueryBuilder('brute')
+                .select('brute.id')
+                .addSelect('RANDOM()', 'rand')
+                .leftJoin('brute.user', 'user')
+                .where('brute.level BETWEEN :minLevel AND :maxLevel', { 
+                    minLevel: Math.max(1, brute.level - 1), 
+                    maxLevel: brute.level + 1 
+                })
+                .andWhere('brute.id NOT IN (:...existingIds)', { existingIds })
+                .andWhere('user.id != :userId', { userId: brute.user.id })
+                .orderBy('rand')
+                .take(remainingCount)
+                .getRawMany();
+
+            this.logger.debug('[getRandomOpponents] Executing nearby levels query...');
+
+            if (nearLevelIds.length > 0) {
+                const nearLevelBrutes = await this.bruteRepository.find({
+                    where: { id: In(nearLevelIds.map(b => b.brute_id)) },
+                    relations: [
+                        'stats',
+                        'bruteSkills',
+                        'bruteSkills.skill',
+                        'bruteWeapons',
+                        'bruteWeapons.weapon',
+                        'user'
+                    ]
+                });
+                this.logger.debug(`[getRandomOpponents] Found ${nearLevelBrutes.length} additional opponents from nearby levels`);
+                sameLevelBrutes.push(...nearLevelBrutes);
+            }
+        }
+
+        // Asegurarse de que solo devolvemos 6 oponentes
+        const finalOpponents = sameLevelBrutes.slice(0, 6);
+        this.logger.debug(`[getRandomOpponents] Successfully found total ${finalOpponents.length} opponents`);
+        return finalOpponents;
+
+    } catch (error) {
+        this.logger.error('[getRandomOpponents] Error occurred:', {
+            message: error.message,
+            stack: error.stack,
+            bruteId,
+            count,
+            error: error
+        });
+        
+        if (error instanceof BadRequestException) {
+            throw error;
+        }
+        
+        throw new Error(`Error al buscar oponentes: ${error.message}`);
+    }
   }
 }

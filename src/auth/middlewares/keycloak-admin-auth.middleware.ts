@@ -1,24 +1,55 @@
 import { Injectable, NestMiddleware, UnauthorizedException } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { ConfigService } from '@nestjs/config';
-import * as jwt from 'jsonwebtoken';
+import axios from 'axios';
+import { UserService } from '../../services/user/user.service';
 
 @Injectable()
 export class KeycloakAdminAuthMiddleware implements NestMiddleware {
-  constructor(private configService: ConfigService) {}
+  constructor(
+    private configService: ConfigService,
+    private userService: UserService
+  ) {}
 
-  use(req: Request, res: Response, next: NextFunction) {
-    const authHeader = req.headers['authorization'];
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('No token provided');
+  async use(req: Request, res: Response, next: NextFunction) {
+    try {
+      const keycloak = this.configService.get('yamlConfig.keycloak');
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.split(' ')[1];
+
+      if (!token) {
+        throw new UnauthorizedException('No token provided');
+      }
+
+      // Obtener el token de admin
+      const adminToken = await this.getAdminToken(keycloak);
+
+      // Almacenar el token en el servicio
+      this.userService.setAdminToken(adminToken);
+
+      next();
+    } catch (error) {
+      throw new UnauthorizedException('Invalid token');
     }
-    const token = authHeader.split(' ')[1];
-    const keycloakConfig = this.configService.get('yamlConfig.keycloak');
-    const adminClientId = keycloakConfig.clients.admin.clientId;
-    const decoded: any = jwt.decode(token);
-    if (!decoded || decoded.azp !== adminClientId) {
-      throw new UnauthorizedException('Invalid admin token');
+  }
+
+  private async getAdminToken(keycloak: any): Promise<string> {
+    try {
+      const tokenUrl = `${keycloak.url}/realms/master/protocol/openid-connect/token`;
+      const response = await axios.post(
+        tokenUrl,
+        new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: keycloak.adminClientId,
+          client_secret: keycloak.adminClientSecret,
+        }),
+        {
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        },
+      );
+      return response.data.access_token;
+    } catch (error) {
+      throw new UnauthorizedException('Failed to get admin token');
     }
-    next();
   }
 }

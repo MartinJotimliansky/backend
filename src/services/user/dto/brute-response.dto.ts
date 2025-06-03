@@ -24,4 +24,7 @@ export class BruteResponseDto {
 
   @ApiProperty({ type: 'array', items: { type: 'object' }, nullable: true })
   weapons: any[] | null;
+
+  @ApiProperty()
+  isSelected: boolean;
 }
