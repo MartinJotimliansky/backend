@@ -1,24 +1,36 @@
-import { Entity, PrimaryGeneratedColumn, ManyToOne, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToOne, JoinColumn } from 'typeorm';
 import { Brute } from '../brute/brute.entity';
 import { BattleLog } from './battle_log.entity';
 
 @Entity('battles')
 export class Battle {
-  @PrimaryGeneratedColumn()
-  id: number;
+    @PrimaryGeneratedColumn()
+    id: number;
 
-  @ManyToOne(() => Brute)
-  brute_attacker: Brute;
+    @Column()
+    seed: string;
 
-  @ManyToOne(() => Brute)
-  brute_defender: Brute;
+    @Column({ name: 'bruteAttackerId' })
+    bruteAttackerId: number;
 
-  @ManyToOne(() => Brute)
-  winner_brute: Brute;
+    @Column({ name: 'bruteDefenderId' })
+    bruteDefenderId: number;
 
-  @Column()
-  seed: string;
+    @Column({ name: 'winnerBruteId', nullable: true })
+    winnerBruteId: number;
 
-  @OneToMany(() => BattleLog, log => log.battle)
-  logs: BattleLog[];
+    @ManyToOne(() => Brute)
+    @JoinColumn({ name: 'bruteAttackerId' })
+    bruteAttacker: Brute;
+
+    @ManyToOne(() => Brute)
+    @JoinColumn({ name: 'bruteDefenderId' })
+    bruteDefender: Brute;
+
+    @ManyToOne(() => Brute)
+    @JoinColumn({ name: 'winnerBruteId' })
+    winnerBrute: Brute;
+
+    @OneToOne(() => BattleLog, log => log.battle)
+    logs: BattleLog;
 }

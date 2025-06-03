@@ -1,21 +1,25 @@
-import { Entity, PrimaryGeneratedColumn, ManyToOne, Column, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, OneToOne, Column, JoinColumn } from 'typeorm';
 import { Battle } from './battle.entity';
+
+interface BattleLogEntry {
+  turn: number;
+  playerTurn: number;
+  action: string;
+  damage?: number;
+  healAmount?: number;
+  attackerHp: number;
+  defenderHp: number;
+}
 
 @Entity('battle_logs')
 export class BattleLog {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => Battle, battle => battle.logs)
-  @JoinColumn({ name: 'battleId' })
+  @OneToOne(() => Battle)
+  @JoinColumn({ name: 'battle_id' })
   battle: Battle;
 
-  @Column({ type: 'int', name: 'turn_number' })
-  turn_number: number;
-
-  @Column({ type: 'varchar', name: 'action_type' })
-  action_type: string;
-
-  @Column({ type: 'varchar' })
-  description: string;
+  @Column({ type: 'jsonb' })
+  logs: BattleLogEntry[];
 }

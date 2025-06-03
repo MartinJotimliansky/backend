@@ -1,7 +1,9 @@
-import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, Param } from '@nestjs/common';
 import { FightService } from './fight.service';
 import { KeycloakLoginAuthGuard } from '../../auth/guards/keycloak-login-auth.guard';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Request } from 'express';
+import { BattleResultDto } from './dto/battle-result.dto';
 
 @ApiTags('Fights')
 @ApiBearerAuth('Bearer')
@@ -9,6 +11,26 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 @UseGuards(KeycloakLoginAuthGuard)
 export class FightController {
     constructor(private readonly fightService: FightService) {}
-    
-    // Endpoints will be implemented later
+
+    @Post('selected-brute/vs/:opponentId')
+    @ApiOperation({ summary: 'Iniciar batalla con el bruto seleccionado contra un oponente' })
+    @ApiResponse({ status: 200, type: BattleResultDto })
+    async fightSelectedBruteVsOpponent(
+        @Param('opponentId') opponentId: number,
+        @Req() req: Request
+    ): Promise<BattleResultDto> {
+        const userJwt = (req as any).user;
+        const battle = await this.fightService.startBattleWithSelectedBrute(userJwt.sub, opponentId);
+        return battle;
+    }
+
+    @Get(':bruteId/history')
+    @ApiOperation({ summary: 'Obtener historial de batallas de un bruto' })
+    @ApiResponse({ status: 200, type: [BattleResultDto] })
+    async getBruteHistory(
+        @Param('bruteId') bruteId: number,
+        @Req() req: Request
+    ): Promise<BattleResultDto[]> {
+        return this.fightService.getBattleHistory(bruteId);
+    }
 }

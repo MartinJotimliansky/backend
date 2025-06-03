@@ -4,7 +4,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './services/user/user.module';
 import { BackofficeModule } from './services/backoffice/backoffice.module';
+import { FightModule } from './services/fight/fight.module';
 import yamlConfig from './config/global/environments/config/yamlConfig';
+import { Action } from './entities/battle/action.entity';
+import { Battle } from './entities/battle/battle.entity';
+import { BattleLog } from './entities/battle/battle_log.entity';
 
 @Module({
   imports: [
@@ -22,16 +26,22 @@ import yamlConfig from './config/global/environments/config/yamlConfig';
           host: db.host,
           port: db.port,
           username: db.username,
-          password: db.password,
-          database: db.name,
+          password: db.password,          database: db.name,
           autoLoadEntities: true,
-          synchronize: true, // Cambia a false en producción
+          synchronize: false,
+          entities: [
+            Action,
+            Battle,
+            BattleLog,
+            __dirname + '/**/*.entity{.ts,.js}',
+          ],
         };
       },
     }),
     AuthModule,
     UserModule,
     BackofficeModule,
+    FightModule,
   ],
   controllers: [],
   providers: [],

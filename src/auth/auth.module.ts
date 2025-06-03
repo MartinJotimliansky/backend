@@ -17,6 +17,7 @@ import { Weapon } from '../entities/items/weapon.entity';
 import { Cosmetic } from '../entities/items/cosmetic.entity';
 import { Battle } from '../entities/battle/battle.entity';
 import { BattleLog } from '../entities/battle/battle_log.entity';
+import { Action } from '../entities/battle/action.entity';
 import { Gratification } from '../entities/battle/gratification.entity';
 import { LevelExperience } from '../entities/battle/level_experience.entity';
 
@@ -25,7 +26,8 @@ import { LevelExperience } from '../entities/battle/level_experience.entity';
     ConfigModule,
     TypeOrmModule.forFeature([
       User, Brute, Stat, BruteLevelChoice, BruteSkill, BruteWeapon, BruteCosmetic,
-      Purchase, ShopItem, Skill, Weapon, Cosmetic, Battle, BattleLog, Gratification, LevelExperience
+      Purchase, ShopItem, Skill, Weapon, Cosmetic, Battle, BattleLog, Action,
+      Gratification, LevelExperience
     ])
   ],
   controllers: [AuthController],
