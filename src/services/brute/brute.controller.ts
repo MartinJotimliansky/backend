@@ -18,6 +18,33 @@ export class BruteController {
     
     constructor(private readonly bruteService: BruteService) {}
 
+    private calculateBruteRating(brute: Brute): number {
+        if (!brute.stats || brute.stats.length === 0) return 0;
+
+        const stats = brute.stats[0];
+        const baseStats = stats.strenght + stats.agility + stats.endurance + stats.intelligence;
+        const hpBonus = Math.floor(stats.hp / 10);
+        const skillBonus = (brute.bruteSkills || []).length * 5;
+        const weaponBonus = (brute.bruteWeapons || []).length * 5;
+        const levelBonus = brute.level * 10;
+
+        return baseStats + hpBonus + skillBonus + weaponBonus + levelBonus;
+    }
+
+    private mapBruteToResponse(brute: Brute, isSelected: boolean = false): BruteResponseDto {
+        return {
+            id: brute.id,
+            name: brute.name,
+            level: brute.level,
+            xp: brute.xp,
+            gold: brute.gold,            rating: this.calculateBruteRating(brute),
+            stats: brute.stats?.[0] ?? null,
+            skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
+            weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
+            isSelected
+        };
+    }
+
     @Get()
     @ApiOperation({ summary: 'Get all brutes of the logged user', description: 'Returns all brutes of the logged user with their main relations.' })
     @ApiOkResponse({ type: [BruteResponseDto] })
@@ -31,20 +58,11 @@ export class BruteController {
             const allBrutes = await this.bruteService.getAllBrutes();
             const user = await this.bruteService.getUserFromDb(userJwt.sub);
             
-            // Filtrar solo los brutos del usuario
             const userBrutes = allBrutes.filter(brute => brute.user.id === userJwt.sub);
             
-            return userBrutes.map(brute => ({
-                id: brute.id,
-                name: brute.name,
-                level: brute.level,
-                xp: brute.xp,
-                gold: brute.gold,
-                stats: brute.stats?.[0] ?? null,
-                skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
-                weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
-                isSelected: user?.selected_brute_id === brute.id
-            }));
+            return userBrutes.map(brute => 
+                this.mapBruteToResponse(brute, user?.selected_brute_id === brute.id)
+            );
         } catch (error) {
             this.logger.error(`Error getting brutes: ${error.message}`, error.stack);
             throw error;
@@ -65,13 +83,14 @@ export class BruteController {
             if (!userJwt || !userJwt.sub) {
                 throw new BadRequestException('Usuario no autenticado');
             }
-            const result = await this.bruteService.createBruteForUser(userJwt.sub, body.name);
-            if (result) {
-                this.logger.debug(`Brute created successfully with ID: ${result.id}`);
+            const brute = await this.bruteService.createBruteForUser(userJwt.sub, body.name);
+            if (brute) {
+                this.logger.debug(`Brute created successfully with ID: ${brute.id}`);
+                return this.mapBruteToResponse(brute);
             } else {
                 this.logger.warn('Brute created but result is null');
+                return null;
             }
-            return result;
         } catch (error) {
             this.logger.error(`Error creating brute: ${error.message}`, error.stack);
             throw error;
@@ -97,18 +116,7 @@ export class BruteController {
         }
 
         const user = await this.bruteService.getUserFromDb(userJwt.sub);
-
-        return {
-            id: brute.id,
-            name: brute.name,
-            level: brute.level,
-            xp: brute.xp,
-            gold: brute.gold,
-            stats: brute.stats?.[0] ?? null,
-            skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
-            weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
-            isSelected: user?.selected_brute_id === brute.id
-        };
+        return this.mapBruteToResponse(brute, user?.selected_brute_id === brute.id);
     }
 
     @Get(':bruteId/opponents')
@@ -133,18 +141,7 @@ export class BruteController {
         }
 
         const opponents = await this.bruteService.getRandomOpponents(bruteId, 6);
-
-        return opponents.map(opponent => ({
-            id: opponent.id,
-            name: opponent.name,
-            level: opponent.level,
-            xp: opponent.xp,
-            gold: opponent.gold,
-            stats: opponent.stats?.[0] ?? null,
-            skills: opponent.bruteSkills?.map(bs => bs.skill) ?? [],
-            weapons: opponent.bruteWeapons?.map(bw => bw.weapon) ?? [],
-            isSelected: false
-        }));
+        return opponents.map(opponent => this.mapBruteToResponse(opponent, false));
     }
 
     @Patch(':bruteId/select')
@@ -181,5 +178,27 @@ export class BruteController {
     async deleteAllBrutes() {
         await this.bruteService.deleteAllBrutes();
         return { message: 'Todos los brutos eliminados' };
+    }
+
+    @Get('current/selected')
+    @ApiOperation({ summary: 'Get current selected brute', description: 'Returns the currently selected brute for the logged user.' })
+    @ApiOkResponse({ type: BruteResponseDto })
+    async getCurrentSelectedBrute(@Req() req: Request): Promise<BruteResponseDto> {
+        const userJwt = (req as any).user;
+        if (!userJwt || !userJwt.sub) {
+            throw new BadRequestException('Usuario no autenticado');
+        }
+
+        const user = await this.bruteService.getUserFromDb(userJwt.sub);
+        if (!user || !user.selected_brute_id) {
+            throw new BadRequestException('No hay un bruto seleccionado');
+        }
+
+        const brute = await this.bruteService.getBruteById(user.selected_brute_id);
+        if (!brute) {
+            throw new BadRequestException('Bruto no encontrado');
+        }
+
+        return this.mapBruteToResponse(brute, true);
     }
 }

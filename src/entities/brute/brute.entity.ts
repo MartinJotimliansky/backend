@@ -11,7 +11,6 @@ import { User } from '../user.entity';
 export class Brute {
   @PrimaryGeneratedColumn()
   id: number;
-
   @Column({ type: 'varchar' })
   name: string;
 

@@ -106,10 +106,16 @@ export class BruteService {
         return totalPower - numStats - hp;
     }
 
-    private async createBruteEntity(name: string, user: User) {
-        const brute = this.bruteRepository.create({ name, user });
-        await this.bruteRepository.save(brute);
-        return brute;
+    private async createBruteEntity(name: string, user: User): Promise<Brute> {
+        const brute = this.bruteRepository.create({
+            name,
+            user,
+            level: 1,
+            xp: 0,
+            gold: 0
+            // avatar eliminado porque ya no existe en la entidad
+        });
+        return await this.bruteRepository.save(brute);
     }
 
     private async createStatEntity(stats: any, hp: number, brute: Brute) {

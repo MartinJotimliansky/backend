@@ -15,6 +15,8 @@ export class BruteResponseDto {
 
   @ApiProperty()
   gold: number;
+  @ApiProperty()
+  rating: number;
 
   @ApiProperty({ type: 'object', additionalProperties: true })
   stats: any;
