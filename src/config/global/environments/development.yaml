@@ -10,7 +10,7 @@ keycloak:
   clients:
     login:
       clientId: nalgon-login
-      secret: CKdNO8RH6Wpif4ns5wQqeLeMsK6RHyhD
+      secret: 7P9VKMFCEV8IsFQqUBxIYyp6F1OyGaKN
     admin:
       clientId: nalgon-admin
-      secret: DSvnNbZlz9ZvXVQ72eyoO7e9QJ986EDv
+      secret: Qz1cp3U9llxLGthcs89RWEOj28BqDFrw

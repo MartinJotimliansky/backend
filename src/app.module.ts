@@ -9,6 +9,7 @@ import yamlConfig from './config/global/environments/config/yamlConfig';
 import { Action } from './entities/battle/action.entity';
 import { Battle } from './entities/battle/battle.entity';
 import { BattleLog } from './entities/battle/battle_log.entity';
+import { BruteModule } from './services/brute/brute.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { BattleLog } from './entities/battle/battle_log.entity';
     UserModule,
     BackofficeModule,
     FightModule,
+    BruteModule
   ],
   controllers: [],
   providers: [],

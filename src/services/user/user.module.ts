@@ -4,13 +4,13 @@ import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { User } from '../../entities/user.entity';
 import { Brute } from '../../entities/brute/brute.entity';
-import { BruteService } from './brute.service';
 import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
 import { Stat } from '../../entities/brute/stat.entity';
 import { Weapon } from '../../entities/items/weapon.entity';
 import { Skill } from '../../entities/items/skill.entity';
 import { BruteWeapon } from '../../entities/brute/brute_weapon.entity';
 import { BruteSkill } from '../../entities/brute/brute_skill.entity';
+import { BruteService } from '../brute/brute.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([

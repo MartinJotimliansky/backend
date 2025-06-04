@@ -60,7 +60,6 @@ export class AuthService {
       }
     }
   }
-
   private async syncLocalUserWithKeycloakToken(accessToken: string, dto: LoginDto) {
     const decoded: any = jwt.decode(accessToken);
     if (decoded && decoded.sub) {

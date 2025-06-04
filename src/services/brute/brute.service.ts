@@ -30,14 +30,20 @@ export class BruteService {
             this.logger.debug(`Creating brute for user ${userId}`);
             
             const user = await this.getUserWithBrutes(userId);
+            this.validateBruteLimit(user);
             
             const config = await this.getBrutoConfig();
             const totalPower = this.getRandomPower(config);
+            
+            this.logger.debug(`Config obtained. Total power: ${totalPower}`);
+            
             const numStats = this.getRandomStatCount(config);
             const stats = this.generateStats(numStats);
             const hpRandom = this.getRandomHp(config);
             const hp = config.base_hp + hpRandom;
-            const remainingPower = totalPower - numStats - hpRandom;
+            const remainingPower = this.calculateRemainingPower(totalPower, numStats, hpRandom);
+            
+            this.logger.debug(`Stats generated. HP: ${hp}, Remaining power: ${remainingPower}`);
 
             const brute = await this.createBruteEntity(name, user);
             await this.createStatEntity(stats, hp, brute);
@@ -60,6 +66,17 @@ export class BruteService {
         });
         if (!user) throw new BadRequestException('Usuario no encontrado');
         return user;
+    }
+
+    async getUserFromDb(userId: string) {
+        return this.userRepository.findOne({ where: { id: userId } });
+    }
+
+    private validateBruteLimit(user: User) {
+        const MAX_BRUTES = 100;
+        if (user.brutes && user.brutes.length >= MAX_BRUTES) {
+            throw new BadRequestException(`Máximo ${MAX_BRUTES} brutos por usuario`);
+        }
     }
 
     private async getBrutoConfig(): Promise<BrutoConfig> {
@@ -85,7 +102,11 @@ export class BruteService {
         return this.randomStatDistribution(numStats, statNames);
     }
 
-    private async createBruteEntity(name: string, user: User): Promise<Brute> {
+    private calculateRemainingPower(totalPower: number, numStats: number, hp: number) {
+        return totalPower - numStats - hp;
+    }
+
+    private async createBruteEntity(name: string, user: User) {
         const brute = this.bruteRepository.create({ name, user });
         await this.bruteRepository.save(brute);
         return brute;
@@ -98,8 +119,10 @@ export class BruteService {
     }
 
     private async assignWeaponOrSkill(brute: Brute, config: BrutoConfig, remainingPower: number) {
-        const roll = Math.random() * 100;
-        if (roll < config.weapon_chance) {
+        if (remainingPower <= 0) return;
+
+        const choice = Math.random();
+        if (choice < 0.5) {
             await this.assignWeapon(brute, remainingPower);
         } else {
             await this.assignSkill(brute, remainingPower);
@@ -107,41 +130,40 @@ export class BruteService {
     }
 
     private async assignWeapon(brute: Brute, remainingPower: number) {
-        const weapons = await this.weaponRepo.find({
+        const weapons = await this.weaponRepo.find({ 
             where: { power_value: LessThanOrEqual(remainingPower) },
             order: { power_value: 'DESC' }
         });
 
         if (weapons.length > 0) {
             const weapon = weapons[Math.floor(Math.random() * weapons.length)];
-            const bruteWeapon = this.bruteWeaponRepo.create({
-                brute,
-                weapon,
-                equipped: true
-            });
+            const bruteWeapon = this.bruteWeaponRepo.create({ brute, weapon });
             await this.bruteWeaponRepo.save(bruteWeapon);
         }
     }
 
     private async assignSkill(brute: Brute, remainingPower: number) {
-        const skills = await this.skillRepo.find({
+        const skills = await this.skillRepo.find({ 
             where: { power_value: LessThanOrEqual(remainingPower) },
             order: { power_value: 'DESC' }
         });
 
         if (skills.length > 0) {
             const skill = skills[Math.floor(Math.random() * skills.length)];
-            const bruteSkill = this.bruteSkillRepo.create({
-                brute,
-                skill,
-                selectedTrigger: skill.activationTriggers?.[0] ?? null
-            });
+            const bruteSkill = new BruteSkill();
+            bruteSkill.brute = brute;
+            bruteSkill.skill = skill;
+            
+            if (skill.activationTriggers && skill.activationTriggers.length > 0) {
+                bruteSkill.selectedTrigger = skill.activationTriggers[
+                    Math.floor(Math.random() * skill.activationTriggers.length)
+                ];
+            } else {
+                bruteSkill.selectedTrigger = null;
+            }
+
             await this.bruteSkillRepo.save(bruteSkill);
         }
-    }
-
-    private randomInt(min: number, max: number): number {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
     private randomStatDistribution(total: number, statNames: string[]) {
@@ -156,15 +178,14 @@ export class BruteService {
         return stats;
     }
 
+    private randomInt(min: number, max: number) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
     async getRandomOpponents(bruteId: number, count: number): Promise<Brute[]> {
         try {
             this.logger.debug(`[getRandomOpponents] Starting search for opponents. BruteId: ${bruteId}, Count: ${count}`);
-            
-            const brute = await this.bruteRepository.findOne({
-                where: { id: bruteId },
-                relations: ['user']
-            });
-
+              const brute = await this.getBruteById(bruteId);
             if (!brute) {
                 this.logger.error(`[getRandomOpponents] Brute not found with id: ${bruteId}`);
                 throw new BadRequestException('Bruto no encontrado');
@@ -172,23 +193,46 @@ export class BruteService {
 
             this.logger.debug(`[getRandomOpponents] Found brute: ${brute.id}, Level: ${brute.level}, UserId: ${brute.user.id}`);
 
-            // Obtener brutos del mismo nivel
+            // Get brutes of same level
             const sameLevel = await this.bruteRepository
                 .createQueryBuilder('brute')
                 .select('brute.id')
                 .addSelect('RANDOM()', 'rand')
-                .leftJoin('brute.user', 'user')
                 .where('brute.level = :level', { level: brute.level })
                 .andWhere('brute.id != :bruteId', { bruteId })
-                .andWhere('user.id != :userId', { userId: brute.user.id })
+                .andWhere('brute.user != :userId', { userId: brute.user.id })
                 .orderBy('rand')
-                .take(count)
-                .getRawMany();
+                .limit(count)
+                .getMany();
 
-            this.logger.debug('[getRandomOpponents] Executing same level query...');
+            const sameLevelIds = sameLevel.map(b => b.id);
             
-            const sameLevelBrutes = await this.bruteRepository.find({
-                where: { id: In(sameLevel.map(b => b.brute_id)) },
+            // If we don't have enough of same level, get some from adjacent levels
+            let remainingCount = count - sameLevelIds.length;
+            let additionalBrutes: Brute[] = [];
+            
+            if (remainingCount > 0) {
+                additionalBrutes = await this.bruteRepository
+                    .createQueryBuilder('brute')
+                    .select('brute.id')
+                    .addSelect('RANDOM()', 'rand')
+                    .where('brute.level BETWEEN :minLevel AND :maxLevel', { 
+                        minLevel: Math.max(1, brute.level - 1),
+                        maxLevel: brute.level + 1
+                    })
+                    .andWhere('brute.id != :bruteId', { bruteId })
+                    .andWhere('brute.id NOT IN (:...ids)', { ids: sameLevelIds })
+                    .andWhere('brute.user != :userId', { userId: brute.user.id })
+                    .orderBy('rand')
+                    .limit(remainingCount)
+                    .getMany();
+            }
+
+            const allOpponentIds = [...sameLevelIds, ...additionalBrutes.map(b => b.id)];
+
+            // Get full brute data with relations
+            const opponents = await this.bruteRepository.find({
+                where: { id: In(allOpponentIds) },
                 relations: [
                     'stats',
                     'bruteSkills',
@@ -198,66 +242,11 @@ export class BruteService {
                     'user'
                 ]
             });
-            
-            this.logger.debug(`[getRandomOpponents] Found ${sameLevelBrutes.length} opponents of same level`);
 
-            if (sameLevelBrutes.length < count) {
-                this.logger.debug(`[getRandomOpponents] Not enough same-level opponents, searching nearby levels...`);
-                const remainingCount = count - sameLevelBrutes.length;
-                const existingIds = [...sameLevelBrutes.map(b => b.id), bruteId];
-
-                const nearLevelIds = await this.bruteRepository
-                    .createQueryBuilder('brute')
-                    .select('brute.id')
-                    .addSelect('RANDOM()', 'rand')
-                    .leftJoin('brute.user', 'user')
-                    .where('brute.level BETWEEN :minLevel AND :maxLevel', { 
-                        minLevel: Math.max(1, brute.level - 1), 
-                        maxLevel: brute.level + 1 
-                    })
-                    .andWhere('brute.id NOT IN (:...existingIds)', { existingIds })
-                    .andWhere('user.id != :userId', { userId: brute.user.id })
-                    .orderBy('rand')
-                    .take(remainingCount)
-                    .getRawMany();
-
-                this.logger.debug('[getRandomOpponents] Executing nearby levels query...');
-
-                if (nearLevelIds.length > 0) {
-                    const nearLevelBrutes = await this.bruteRepository.find({
-                        where: { id: In(nearLevelIds.map(b => b.brute_id)) },
-                        relations: [
-                            'stats',
-                            'bruteSkills',
-                            'bruteSkills.skill',
-                            'bruteWeapons',
-                            'bruteWeapons.weapon',
-                            'user'
-                        ]
-                    });
-                    this.logger.debug(`[getRandomOpponents] Found ${nearLevelBrutes.length} additional opponents from nearby levels`);
-                    sameLevelBrutes.push(...nearLevelBrutes);
-                }
-            }
-
-            const finalOpponents = sameLevelBrutes.slice(0, 6);
-            this.logger.debug(`[getRandomOpponents] Successfully found total ${finalOpponents.length} opponents`);
-            return finalOpponents;
-
+            return opponents;
         } catch (error) {
-            this.logger.error('[getRandomOpponents] Error occurred:', {
-                message: error.message,
-                stack: error.stack,
-                bruteId,
-                count,
-                error: error
-            });
-            
-            if (error instanceof BadRequestException) {
-                throw error;
-            }
-            
-            throw new Error(`Error al buscar oponentes: ${error.message}`);
+            this.logger.error(`[getRandomOpponents] Error: ${error.message}`, error.stack);
+            throw error;
         }
     }
 
@@ -300,19 +289,57 @@ export class BruteService {
     }
 
     async generateRandomBrutesForTesting(): Promise<Brute[]> {
-        const user = await this.userRepository.findOne({ where: {} });
-        if (!user) throw new Error('No hay usuarios en la base de datos');
-        
+        const config = await this.getBrutoConfig();
         const brutes: Brute[] = [];
+
         for (let i = 0; i < 10; i++) {
-            const name = `TestBruto_${Date.now()}_${i}`;
-            const brute = await this.createBruteForUser(user.id, name);
-            if (brute) {
-                brutes.push(brute);
-            }
+            const brute = this.bruteRepository.create({
+                name: `Test Brute ${i + 1}`,
+                level: Math.floor(Math.random() * 5) + 1
+            });
+            await this.bruteRepository.save(brute);
+
+            const totalPower = this.getRandomPower(config);
+            const numStats = this.getRandomStatCount(config);
+            const stats = this.generateStats(numStats);
+            const hpRandom = this.getRandomHp(config);
+            const hp = config.base_hp + hpRandom;
+            
+            await this.createStatEntity(stats, hp, brute);
+            await this.assignWeaponOrSkill(brute, config, totalPower - numStats - hpRandom);
+
+            brutes.push(brute);
         }
+
         return brutes;
     }
 
-    // ... rest of your existing methods
+    async selectBrute(userId: string, bruteId: number) {
+        const user = await this.userRepository.findOne({ where: { id: userId } });
+        if (!user) throw new BadRequestException('Usuario no encontrado');
+
+        const brute = await this.bruteRepository.findOne({ 
+            where: { id: bruteId, user: { id: userId } },
+            relations: ['user']
+        });
+        
+        if (!brute) throw new BadRequestException('El bruto no pertenece al usuario');
+        
+        user.selected_brute_id = bruteId;
+        await this.userRepository.save(user);
+        return { message: 'Bruto seleccionado', selected_brute_id: bruteId };
+    }
+
+    async getAllBrutes(): Promise<Brute[]> {
+        return this.bruteRepository.find({
+            relations: [
+                'stats',
+                'bruteSkills',
+                'bruteSkills.skill',
+                'bruteWeapons',
+                'bruteWeapons.weapon',
+                'user'
+            ]
+        });
+    }
 }
