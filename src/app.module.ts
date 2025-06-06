@@ -5,11 +5,12 @@ import { AuthModule } from './auth/auth.module';
 import { UserModule } from './services/user/user.module';
 import { BackofficeModule } from './services/backoffice/backoffice.module';
 import { FightModule } from './services/fight/fight.module';
+import { BruteModule } from './services/brute/brute.module';
+import { LevelModule } from './services/level/level.module';
 import yamlConfig from './config/global/environments/config/yamlConfig';
 import { Action } from './entities/battle/action.entity';
 import { Battle } from './entities/battle/battle.entity';
 import { BattleLog } from './entities/battle/battle_log.entity';
-import { BruteModule } from './services/brute/brute.module';
 
 @Module({
   imports: [
@@ -38,12 +39,12 @@ import { BruteModule } from './services/brute/brute.module';
           ],
         };
       },
-    }),
-    AuthModule,
+    }),    AuthModule,
     UserModule,
     BackofficeModule,
     FightModule,
-    BruteModule
+    BruteModule,
+    LevelModule
   ],
   controllers: [],
   providers: [],

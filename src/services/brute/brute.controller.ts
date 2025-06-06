@@ -43,6 +43,20 @@ export class BruteController {
             weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
             isSelected
         };
+    }    @Get('config')
+    @ApiOperation({ summary: 'Get brute configuration', description: 'Returns the brute configuration including max_brutes limit.' })
+    async getBruteConfig(@Req() req: Request) {
+        const userJwt = (req as any).user;
+        if (!userJwt || !userJwt.sub) {
+            throw new BadRequestException('Usuario no autenticado');
+        }
+
+        const config = await this.bruteService.getBruteConfig();
+        return {
+            max_brutes: config.max_brutes,
+            base_hp: config.base_hp,
+            weapon_chance: config.weapon_chance
+        };
     }
 
     @Get()
@@ -75,7 +89,7 @@ export class BruteController {
         whitelist: true,
         forbidNonWhitelisted: true
     }))
-    @ApiOperation({ summary: 'Create brute', description: 'Creates a brute for the logged user. Maximum 5 brutes per user.' })
+    @ApiOperation({ summary: 'Create brute', description: 'Creates a brute for the logged user. Maximum brutes per user is configurable (default 5).' })
     async createBrute(@Body() body: CreateBruteDto, @Req() req: Request) {
         try {
             this.logger.debug(`Creating brute with name: ${body.name}`);

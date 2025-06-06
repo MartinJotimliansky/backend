@@ -1,11 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryColumn, Column } from 'typeorm';
 
 @Entity('level_experiences')
 export class LevelExperience {
-  @PrimaryGeneratedColumn()
-  id: number;
-
-  @Column({ type: 'int' })
+  @PrimaryColumn({ type: 'int' })
   level: number;
 
   @Column({ type: 'int' })

@@ -23,16 +23,16 @@ export class BruteService {
         @InjectRepository(Skill) private skillRepo: Repository<Skill>,
         @InjectRepository(BruteWeapon) private bruteWeaponRepo: Repository<BruteWeapon>,
         @InjectRepository(BruteSkill) private bruteSkillRepo: Repository<BruteSkill>,
-    ) {}
-
-    async createBruteForUser(userId: string, name: string): Promise<Brute | null> {
+    ) {}    async createBruteForUser(userId: string, name: string): Promise<Brute | null> {
         try {
             this.logger.debug(`Creating brute for user ${userId}`);
             
             const user = await this.getUserWithBrutes(userId);
-            this.validateBruteLimit(user);
-            
             const config = await this.getBrutoConfig();
+            
+            // Validar límite usando la configuración de la base de datos
+            await this.validateBruteLimitWithConfig(user, config);
+            
             const totalPower = this.getRandomPower(config);
             
             this.logger.debug(`Config obtained. Total power: ${totalPower}`);
@@ -70,19 +70,23 @@ export class BruteService {
 
     async getUserFromDb(userId: string) {
         return this.userRepository.findOne({ where: { id: userId } });
+    }    private validateBruteLimit(user: User) {
+        // Este método ahora será async y se llamará después de obtener la config
+        // Se mantendrá por compatibilidad pero ya no se usa el MAX_BRUTES hardcoded
     }
 
-    private validateBruteLimit(user: User) {
-        const MAX_BRUTES = 100;
-        if (user.brutes && user.brutes.length >= MAX_BRUTES) {
-            throw new BadRequestException(`Máximo ${MAX_BRUTES} brutos por usuario`);
+    private async validateBruteLimitWithConfig(user: User, config: BrutoConfig) {
+        if (user.brutes && user.brutes.length >= config.max_brutes) {
+            throw new BadRequestException(`Máximo ${config.max_brutes} brutos por usuario`);
         }
-    }
-
-    private async getBrutoConfig(): Promise<BrutoConfig> {
+    }    private async getBrutoConfig(): Promise<BrutoConfig> {
         const config = await this.brutoConfigRepo.findOne({ where: {} });
         if (!config) throw new BadRequestException('No hay configuración de brutos');
         return config;
+    }
+
+    async getBruteConfig(): Promise<BrutoConfig> {
+        return this.getBrutoConfig();
     }
 
     private getRandomPower(config: BrutoConfig): number {

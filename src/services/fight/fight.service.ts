@@ -41,16 +41,17 @@ export class FightService {
 
     private mapBruteToBruteResponse(brute: any): BruteResponseDto {
         return {
-            id: brute.id,
-            name: brute.name,
-            level: brute.level,
-            xp: brute.xp,
-            gold: brute.gold,
-            stats: brute.stats?.[0] ?? null,
-            skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
-            weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
-            isSelected: false
-        };
+    id: brute.id,
+    name: brute.name,
+    level: brute.level,
+    xp: brute.xp,
+    gold: brute.gold,
+    stats: brute.stats?.[0] ?? null,
+    skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
+    weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
+    isSelected: false,
+    rating: 0,
+};
     }
 
     private mapBattleLogToBattleLogDto(log: BattleLogEntry): BattleLogDto {
