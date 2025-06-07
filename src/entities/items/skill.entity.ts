@@ -19,4 +19,7 @@ export class Skill {
 
   @Column({ type: 'int', default: 0, nullable: true })
   power_value: number;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
 }

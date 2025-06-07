@@ -1,27 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { LevelExperience } from '../../entities/battle/level_experience.entity';
+import { Repository, Not, In } from 'typeorm';
 import { Gratification } from '../../entities/battle/gratification.entity';
 import { StatBoostPossibility } from '../../entities/battle/stat_boost_possibility.entity';
 import { BruteLevelChoice } from '../../entities/brute/brute_level_choice.entity';
 import { Stat } from '../../entities/brute/stat.entity';
 import { Brute } from '../../entities/brute/brute.entity';
+import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
 import { BruteService } from '../brute/brute.service';
-
-export interface GratificationOption {
-  id: string;
-  type: 'stat_boost' | 'weapon' | 'skill';
-  name: string;
-  description: string;
-  data: StatBoostPossibility | Gratification;
-}
+import { LevelInfoDto } from './dto/level-info.dto';
+import { GratificationOptionDto } from './dto/gratification-option.dto';
+import { LevelUpResultDto } from './dto/level-up-result.dto';
+import { GratificationChoiceDto } from './dto/level-up-request.dto';
 
 @Injectable()
 export class LevelService {
   constructor(
-    @InjectRepository(LevelExperience)
-    private levelExperienceRepository: Repository<LevelExperience>,
     @InjectRepository(Gratification)
     private gratificationRepository: Repository<Gratification>,
     @InjectRepository(StatBoostPossibility)
@@ -32,396 +26,438 @@ export class LevelService {
     private statRepository: Repository<Stat>,
     @InjectRepository(Brute)
     private bruteRepository: Repository<Brute>,
+    @InjectRepository(BrutoConfig)
+    private brutoConfigRepository: Repository<BrutoConfig>,
     private bruteService: BruteService,
   ) {}
 
+  // ================================
+  // CORE LEVEL CALCULATION METHODS
+  // ================================
+  
   /**
-   * Calcula la experiencia ganada por un resultado de combate
-   * @param won - true si ganó el combate, false si perdió
-   * @returns cantidad de experiencia ganada
+   * Obtiene el nivel máximo desde la configuración del backoffice
+   * @returns nivel máximo permitido
    */
-  calculateExperienceGain(won: boolean): number {
-    return won ? 2 : 1; // Ganar: 2 exp, Perder: 1 exp
-  }
-  /**
-   * Calcula el nivel basado en la experiencia total
-   * Implementa la fórmula: nivel 1→2 necesita 5 exp, cada nivel siguiente +1 exp más
-   * @param totalExperience - experiencia total del jugador
-   * @returns nivel actual
-   */
-  calculateLevelFromExperience(totalExperience: number): number {
-    if (totalExperience < 5) return 1;
-    
-    // Búsqueda iterativa para encontrar el nivel correcto
-    for (let level = 2; level <= 50; level++) {
-      const expForLevel = this.calculateExperienceForLevel(level);
-      if (totalExperience < expForLevel) {
-        return level - 1;
-      }
-      if (totalExperience === expForLevel) {
-        return level;
-      }
-    }
-    
-    return 50; // Nivel máximo
+  private async getMaxLevel(): Promise<number> {
+    const config = await this.brutoConfigRepository.findOne({ where: {} });
+    return config?.max_lvl || 50; // Default a 50 si no hay configuración
   }  /**
-   * Calcula la experiencia requerida para un nivel específico
-   * @param level - nivel objetivo
-   * @returns experiencia total requerida para alcanzar ese nivel
-   */
-  calculateExperienceForLevel(level: number): number {
-    if (level <= 1) return 0;
-    if (level === 2) return 5;
-    
-    // Análisis correcto de la progresión del SQL:
-    // Nivel 2: 5 total
-    // Nivel 3: 11 total (necesita 6 para subir)
-    // Nivel 4: 18 total (necesita 7 para subir)
-    // Nivel 5: 26 total (necesita 8 para subir)
-    //
-    // Fórmula correcta: 5 + sum(5+i, i=1 to level-2)
-    // = 5 + 6 + 7 + 8 + ... + (5+(level-2))
-    
-    let total = 5; // Base para nivel 2
-    for (let i = 1; i <= level - 2; i++) {
-      total += 5 + i; // 6, 7, 8, 9, etc.
-    }
-    return total;
-  }
-
-  /**
-   * Obtiene la experiencia requerida para el siguiente nivel
-   * @param currentLevel - nivel actual
-   * @returns experiencia necesaria para subir al siguiente nivel
-   */
-  getExperienceToNextLevel(currentLevel: number): number {
-    if (currentLevel >= 50) return 0; // Nivel máximo alcanzado
-    
-    return 5 + (currentLevel - 1); // Fórmula: 5 para nivel 2, luego +1 cada nivel
-  }
-
-  /**
-   * Obtiene información completa del nivel basada en la experiencia
-   * @param totalExperience - experiencia total del jugador
-   * @returns objeto con información del nivel
-   */
-  async getLevelInfo(totalExperience: number) {
-    const currentLevel = this.calculateLevelFromExperience(totalExperience);
-    const currentLevelExp = this.calculateExperienceForLevel(currentLevel);
-    const nextLevelExp = this.calculateExperienceForLevel(currentLevel + 1);
-    const expToNext = this.getExperienceToNextLevel(currentLevel);
-    const expInCurrentLevel = totalExperience - currentLevelExp;
-
-    return {
-      level: currentLevel,
-      totalExperience,
-      experienceInCurrentLevel: expInCurrentLevel,
-      experienceToNextLevel: Math.max(0, expToNext - expInCurrentLevel),
-      experienceRequiredForNextLevel: expToNext,
-      isMaxLevel: currentLevel >= 50,
-      progressPercentage: currentLevel >= 50 ? 100 : 
-        Math.round((expInCurrentLevel / expToNext) * 100)
-    };
-  }
-
-  /**
-   * Actualiza la experiencia de un bruto y devuelve si subió de nivel
-   * @param currentExperience - experiencia actual
-   * @param combatResult - true si ganó, false si perdió
-   * @returns información sobre el cambio de nivel
-   */
-  async updateExperience(currentExperience: number, combatResult: boolean) {
-    const expGain = this.calculateExperienceGain(combatResult);
-    const oldLevel = this.calculateLevelFromExperience(currentExperience);
-    const newExperience = currentExperience + expGain;
-    const newLevel = this.calculateLevelFromExperience(newExperience);
-    
-    const leveledUp = newLevel > oldLevel;
-    
-    return {
-      oldLevel,
-      newLevel,
-      oldExperience: currentExperience,
-      newExperience,
-      experienceGained: expGain,
-      leveledUp,
-      levelInfo: await this.getLevelInfo(newExperience)
-    };
-  }
-
-  /**
-   * Obtiene todos los datos de nivel desde la base de datos (para referencia)
-   * @returns array con todos los niveles y sus requisitos de experiencia
-   */
-  async getAllLevelData(): Promise<LevelExperience[]> {
-    return this.levelExperienceRepository.find({
-      order: { level: 'ASC' }
-    });
-  }
-
-  /**
-   * Valida que los datos calculados coincidan con los de la base de datos
-   * @returns true si coinciden, false si hay discrepancias
-   */
-  async validateLevelData(): Promise<boolean> {
-    const dbData = await this.getAllLevelData();
-    
-    for (const entry of dbData) {
-      const calculatedExp = this.calculateExperienceForLevel(entry.level);
-      if (calculatedExp !== entry.experience) {
-        console.error(`Discrepancia en nivel ${entry.level}: calculado=${calculatedExp}, db=${entry.experience}`);
-        return false;
-      }
-    }
-    
-    return true;
-  }
-
-  // Métodos de compatibilidad con el sistema existente
-  /**
-   * Obtiene el nivel basado en la experiencia actual (versión async para compatibilidad)
-   */
-  async getLevelFromExperience(currentExperience: number): Promise<number> {
-    return this.calculateLevelFromExperience(currentExperience);
-  }
-
-  /**
-   * Obtiene la experiencia requerida para un nivel específico (versión async para compatibilidad)
-   */
-  async getExperienceForLevel(level: number): Promise<number> {
-    return this.calculateExperienceForLevel(level);
-  }
-
-  /**
-   * Verifica si un bruto puede subir de nivel (tiene experiencia suficiente pero no ha elegido gratificación)
-   * @param currentExperience - experiencia actual del bruto
+   * Calcula la experiencia requerida para subir al siguiente nivel
+   * Fórmula: nivel actual + 5
    * @param currentLevel - nivel actual del bruto
-   * @returns true si puede subir de nivel
+   * @returns experiencia requerida para subir al siguiente nivel
    */
-  canLevelUp(currentExperience: number, currentLevel: number): boolean {
-    const calculatedLevel = this.calculateLevelFromExperience(currentExperience);
-    return calculatedLevel > currentLevel;
-  }
-
-  /**
-   * Verifica si un bruto debe ser bloqueado para combatir (necesita subir de nivel)
-   * @param currentExperience - experiencia actual del bruto
-   * @param currentLevel - nivel actual del bruto
-   * @returns true si debe ser bloqueado hasta que suba de nivel
-   */
-  isBlockedForCombat(currentExperience: number, currentLevel: number): boolean {
-    return this.canLevelUp(currentExperience, currentLevel);
-  }
-  /**
-   * Aplica una gratificación y sube al bruto de nivel
-   * @param gratificationId - ID de la gratificación elegida
-   * @param currentLevel - nivel actual del bruto
-   * @returns información sobre la gratificación aplicada
-   */
-  async applyGratification(gratificationId: number, currentLevel: number) {
-    const gratification = await this.gratificationRepository.findOne({
-      where: { id: gratificationId }
-    });
-
-    if (!gratification) {
-      throw new Error('Gratificación no encontrada');
+  private getExperienceRequiredForNextLevel(currentLevel: number): number {
+    return currentLevel + 5;
+  }  async getBruteLevelInfo(bruteId: number): Promise<LevelInfoDto> {
+    const brute = await this.bruteService.getBruteById(bruteId);
+    
+    if (!brute) {
+      throw new NotFoundException('Bruto no encontrado');
     }
 
-    if (gratification.min_level > currentLevel + 1) {
-      throw new Error('Gratificación no disponible para este nivel');
+    const currentLevel = brute.level;
+    const currentExperience = brute.xp;
+    const maxLevel = await this.getMaxLevel();
+    
+    // Si ya está en nivel máximo
+    if (currentLevel >= maxLevel) {
+      return {
+        bruteId: brute.id,
+        bruteName: brute.name,
+        currentLevel,
+        currentXp: currentExperience,
+        nextLevelXp: 0,
+        progressPercentage: 100,
+        canLevelUp: false,
+        blockedFromCombat: false,
+        isMaxLevel: true
+      };
     }
 
-    // Aquí se aplicaría la gratificación al bruto (stats, armas, habilidades)
-    // Esto dependerá de la implementación específica de cada tipo de gratificación
+    // Experiencia requerida para el siguiente nivel: nivel actual + 5
+    const nextLevelExpRequired = this.getExperienceRequiredForNextLevel(currentLevel);
+    
+    // Progreso hacia el siguiente nivel
+    const progressPercentage = nextLevelExpRequired > 0 ? 
+      Math.floor((currentExperience / nextLevelExpRequired) * 100) : 0;
+    
+    // Verificar si puede subir de nivel
+    const canLevelUp = currentExperience >= nextLevelExpRequired;
 
     return {
-      newLevel: currentLevel + 1,
-      appliedGratification: gratification,
-      gratificationType: gratification.type,
-      gratificationValue: gratification.value_json
-    };
-  }
-
-  /**
-   * Obtiene el progreso de nivel incluyendo información sobre si puede subir
-   * @param currentExperience - experiencia actual
-   * @param currentLevel - nivel actual del bruto
-   * @returns información completa del progreso incluyendo estado de subida
-   */
-  async getDetailedLevelInfo(currentExperience: number, currentLevel: number) {
-    const levelInfo = await this.getLevelInfo(currentExperience);
-    const canLevelUp = this.canLevelUp(currentExperience, currentLevel);
-    const isBlocked = this.isBlockedForCombat(currentExperience, currentLevel);
-
-    return {
-      ...levelInfo,
-      currentLevel, // Nivel real del bruto (puede ser diferente al calculado)
+      bruteId: brute.id,
+      bruteName: brute.name,
+      currentLevel,
+      currentXp: currentExperience,
+      nextLevelXp: nextLevelExpRequired,
+      progressPercentage,
       canLevelUp,
-      isBlockedForCombat: isBlocked,
-      needsGratificationChoice: canLevelUp
+      blockedFromCombat: canLevelUp,
+      isMaxLevel: false
     };
   }
 
-  /**
-   * Simula la aplicación de una gratificación para previsualización
-   * @param gratificationId - ID de la gratificación
-   * @returns información sobre qué haría la gratificación
-   */
-  async previewGratification(gratificationId: number) {
-    const gratification = await this.gratificationRepository.findOne({
-      where: { id: gratificationId }
-    });
+  // ================================
+  // GRATIFICATION METHODS
+  // ================================
 
-    if (!gratification) {
-      throw new Error('Gratificación no encontrada');
-    }
-
-    return {
-      id: gratification.id,
-      name: gratification.name,
-      type: gratification.type,
-      description: this.getGratificationDescription(gratification),
-      value: gratification.value_json
-    };
-  }
   /**
-   * Genera una descripción legible de una gratificación
-   * @param gratification - objeto gratificación
-   * @returns descripción en texto
-   */
-  private getGratificationDescription(gratification: Gratification): string {
-    switch (gratification.type) {
-      case 'stat_boost':
-        const stats = gratification.value_json;
-        const statNames = {
-          strength: 'Fuerza',
-          agility: 'Agilidad',
-          intellect: 'Intelecto',
-          endurance: 'Resistencia'
-        };
-        const boosts = Object.entries(stats)
-          .map(([stat, value]) => `+${value} ${statNames[stat] || stat}`)
-          .join(', ');
-        return `Mejora de estadísticas: ${boosts}`;
-      
-      case 'weapon':
-        return `Nueva arma: ${gratification.name}`;
-      
-      case 'skill':
-        return `Nueva habilidad: ${gratification.name}`;
-      
-      default:
-        return gratification.name;
-    }
-  }  /**
-   * Obtiene las 3 gratificaciones disponibles para elegir al subir de nivel
-   * Incluye: stat boosts, armas y habilidades
+   * Obtiene las gratificaciones disponibles para un nivel específico
+   * Filtra armas y habilidades que el bruto ya posee
    * @param level - nivel del jugador
+   * @param bruteId - ID del bruto para filtrar items ya poseídos
    * @returns array de 3 gratificaciones para elegir
    */
-  async getAvailableGratifications(level: number): Promise<GratificationOption[]> {
-    // Obtener stat boosts disponibles para este nivel
-    const statBoosts = await this.statBoostPossibilityRepository
-      .createQueryBuilder('sbp')
-      .where('sbp.min_level <= :level', { level })
-      .orderBy('RANDOM()')
-      .limit(1)
-      .getMany();
-
-    // Obtener armas disponibles
-    const weapons = await this.gratificationRepository
-      .createQueryBuilder('g')
-      .where('g.min_level <= :level', { level })
-      .andWhere('g.type = :type', { type: 'weapon' })
-      .orderBy('RANDOM()')
-      .limit(1)
-      .getMany();
-
-    // Obtener habilidades disponibles
-    const skills = await this.gratificationRepository
-      .createQueryBuilder('g')
-      .where('g.min_level <= :level', { level })
-      .andWhere('g.type = :type', { type: 'skill' })
-      .orderBy('RANDOM()')
-      .limit(1)
-      .getMany();
-
-    // Formatear las opciones
-    const options: GratificationOption[] = [];
-
-    // Agregar stat boost si existe
-    if (statBoosts.length > 0) {
-      const sb = statBoosts[0];
-      options.push({
-        id: `stat_boost_${sb.id}`,
-        type: 'stat_boost',
-        name: this.getStatBoostName(sb),
-        description: this.getStatBoostDescription(sb),
-        data: sb
-      });
+  async getAvailableGratifications(level: number, bruteId: number): Promise<GratificationOptionDto[]> {
+    const brute = await this.bruteService.getBruteById(bruteId);
+    if (!brute) {
+      throw new NotFoundException('Bruto no encontrado');
     }
 
-    // Agregar arma si existe
-    if (weapons.length > 0) {
-      const weapon = weapons[0];
-      options.push({
-        id: `weapon_${weapon.id}`,
-        type: 'weapon',
-        name: weapon.name,
-        description: `Nueva arma: ${weapon.name}`,
-        data: weapon
-      });
+    // Obtener IDs de armas y habilidades que ya tiene el bruto
+    const ownedWeaponIds = brute.bruteWeapons?.map(bw => bw.weapon.id) || [];
+    const ownedSkillIds = brute.bruteSkills?.map(bs => bs.skill.id) || [];
+
+    const options: GratificationOptionDto[] = [];
+
+    // Agregar stat boost (siempre disponible)
+    const statBoost = await this.getRandomStatBoost(level);
+    if (statBoost) {
+      options.push(statBoost);
     }
 
-    // Agregar habilidad si existe
-    if (skills.length > 0) {
-      const skill = skills[0];
-      options.push({
-        id: `skill_${skill.id}`,
-        type: 'skill',
-        name: skill.name,
-        description: `Nueva habilidad: ${skill.name}`,
-        data: skill
-      });
-    }    // Si tenemos menos de 3, completar con más stat boosts
+    // Agregar arma disponible (que no tenga el bruto)
+    const weapon = await this.getRandomWeapon(level, ownedWeaponIds);
+    if (weapon) {
+      options.push(weapon);
+    }
+
+    // Agregar habilidad disponible (que no tenga el bruto)
+    const skill = await this.getRandomSkill(level, ownedSkillIds);
+    if (skill) {
+      options.push(skill);
+    }
+
+    // Si no tenemos 3 opciones, completar con más stat boosts
     while (options.length < 3) {
-      const excludeIds = options
-        .filter(o => o.type === 'stat_boost')
-        .map(o => parseInt(o.id.split('_')[2]));
-      
-      let query = this.statBoostPossibilityRepository
-        .createQueryBuilder('sbp')
-        .where('sbp.min_level <= :level', { level });
-      
-      if (excludeIds.length > 0) {
-        query = query.andWhere('sbp.id NOT IN (:...excludeIds)', { excludeIds });
-      }
-      
-      const additionalStatBoosts = await query
-        .orderBy('RANDOM()')
-        .limit(1)
-        .getMany();
-
-      if (additionalStatBoosts.length > 0) {
-        const sb = additionalStatBoosts[0];
-        options.push({
-          id: `stat_boost_${sb.id}`,
-          type: 'stat_boost',
-          name: this.getStatBoostName(sb),
-          description: this.getStatBoostDescription(sb),
-          data: sb
-        });
+      const additionalStatBoost = await this.getRandomStatBoost(level, 
+        options.filter(o => o.type === 'stat_boost').map(o => parseInt(o.id.split('_')[2]))
+      );
+      if (additionalStatBoost) {
+        options.push(additionalStatBoost);
       } else {
-        break; // No hay más stat boosts disponibles
+        break;
       }
     }
 
-    return options.slice(0, 3); // Asegurar que solo devolvemos 3
+    return options.slice(0, 3);
+  }
+
+  /**
+   * Obtiene un stat boost aleatorio disponible para el nivel
+   */
+  private async getRandomStatBoost(level: number, excludeIds: number[] = []): Promise<GratificationOptionDto | null> {
+    let query = this.statBoostPossibilityRepository
+      .createQueryBuilder('sbp')
+      .where('sbp.min_level <= :level', { level });
+    
+    if (excludeIds.length > 0) {
+      query = query.andWhere('sbp.id NOT IN (:...excludeIds)', { excludeIds });
+    }
+    
+    const statBoosts = await query
+      .orderBy('RANDOM()')
+      .limit(1)
+      .getMany();
+
+    if (statBoosts.length === 0) return null;
+
+    const sb = statBoosts[0];
+    return {
+      id: `stat_boost_${sb.id}`,
+      type: 'stat_boost',
+      name: this.getStatBoostName(sb),
+      description: this.getStatBoostDescription(sb),
+      data: sb
+    };
+  }
+
+  /**
+   * Obtiene un arma aleatoria disponible para el nivel
+   */
+  private async getRandomWeapon(level: number, ownedWeaponIds: number[] = []): Promise<GratificationOptionDto | null> {
+    let query = this.gratificationRepository
+      .createQueryBuilder('g')
+      .where('g.min_level <= :level', { level })
+      .andWhere('g.type = :type', { type: 'weapon' });
+    
+    if (ownedWeaponIds.length > 0) {
+      query = query.andWhere('g.id NOT IN (:...ownedIds)', { ownedIds: ownedWeaponIds });
+    }
+    
+    const weapons = await query
+      .orderBy('RANDOM()')
+      .limit(1)
+      .getMany();
+
+    if (weapons.length === 0) return null;
+
+    const weapon = weapons[0];
+    return {
+      id: `weapon_${weapon.id}`,
+      type: 'weapon',
+      name: weapon.name,
+      description: `Nueva arma: ${weapon.name}`,
+      data: weapon
+    };
+  }
+
+  /**
+   * Obtiene una habilidad aleatoria disponible para el nivel
+   */
+  private async getRandomSkill(level: number, ownedSkillIds: number[] = []): Promise<GratificationOptionDto | null> {
+    let query = this.gratificationRepository
+      .createQueryBuilder('g')
+      .where('g.min_level <= :level', { level })
+      .andWhere('g.type = :type', { type: 'skill' });
+    
+    if (ownedSkillIds.length > 0) {
+      query = query.andWhere('g.id NOT IN (:...ownedIds)', { ownedIds: ownedSkillIds });
+    }
+    
+    const skills = await query
+      .orderBy('RANDOM()')
+      .limit(1)
+      .getMany();
+
+    if (skills.length === 0) return null;
+
+    const skill = skills[0];
+    return {
+      id: `skill_${skill.id}`,
+      type: 'skill',
+      name: skill.name,
+      description: `Nueva habilidad: ${skill.name}`,
+      data: skill
+    };
+  }
+
+  // ================================
+  // LEVEL UP METHODS
+  // ================================
+  /**
+   * Procesa el level up de un bruto con la gratificación elegida
+   * @param bruteId - ID del bruto
+   * @param gratificationChoice - gratificación elegida por el jugador
+   * @returns resultado del level up
+   */  async levelUpBrute(bruteId: number, gratificationChoice: GratificationChoiceDto): Promise<LevelUpResultDto> {
+    const brute = await this.bruteService.getBruteById(bruteId);
+    if (!brute) {
+      throw new NotFoundException('Bruto no encontrado');
+    }
+
+    const maxLevel = await this.getMaxLevel();    // Verificar que puede subir de nivel usando la fórmula: nivel actual + 5
+    const nextLevelExp = this.getExperienceRequiredForNextLevel(brute.level);
+    const canLevelUp = brute.level < maxLevel && brute.xp >= nextLevelExp;
+    
+    if (!canLevelUp) {
+      throw new BadRequestException('El bruto no tiene suficiente experiencia para subir de nivel');
+    }
+
+    // Verificar que el bruto no haya alcanzado el nivel máximo
+    if (brute.level >= maxLevel) {
+      throw new BadRequestException('El bruto ya ha alcanzado el nivel máximo');
+    }    const newLevel = brute.level + 1;
+    
+    // Calcular experiencia requerida para este level up
+    const expRequiredForLevelUp = this.getExperienceRequiredForNextLevel(brute.level);
+    
+    // Calcular experiencia restante después de subir de nivel
+    const remainingExp = brute.xp - expRequiredForLevelUp;
+
+    // Aplicar la gratificación elegida
+    const result = await this.applyGratification(bruteId, gratificationChoice, newLevel);
+
+    // Actualizar nivel y experiencia del bruto
+    brute.level = newLevel;
+    brute.xp = remainingExp; // La experiencia se "consume" al subir de nivel
+    await this.bruteRepository.save(brute);
+
+    // Registrar la elección
+    await this.recordLevelChoice(bruteId, newLevel, gratificationChoice);
+
+    return {
+      success: true,
+      newLevel: brute.level,
+      gratificationType: gratificationChoice.type,
+      description: result.description,
+      appliedStats: 'appliedStats' in result ? result.appliedStats : undefined,
+      appliedWeapon: 'appliedWeapon' in result ? result.appliedWeapon : undefined,
+      appliedSkill: 'appliedSkill' in result ? result.appliedSkill : undefined,
+      message: `${brute.name} ha subido al nivel ${brute.level}! Experiencia restante: ${brute.xp}`
+    };
   }
   /**
+   * Aplica la gratificación específica elegida por el jugador
+   */
+  private async applyGratification(bruteId: number, choice: GratificationChoiceDto, newLevel: number) {
+    // Para stat_boost: "stat_boost_5" -> necesitamos el último elemento
+    // Para weapon: "weapon_3" -> necesitamos el segundo elemento
+    // Para skill: "skill_7" -> necesitamos el segundo elemento
+    const parts = choice.id.split('_');
+    const realId = choice.type === 'stat_boost' ? 
+      parseInt(parts[parts.length - 1]) : // Para stat_boost toma el último elemento
+      parseInt(parts[1]); // Para weapon y skill toma el segundo elemento
+
+    if (isNaN(realId)) {
+      throw new BadRequestException(`ID de gratificación inválido: ${choice.id}`);
+    }
+
+    switch (choice.type) {
+      case 'stat_boost':
+        return await this.applyStatBoost(bruteId, realId);
+      case 'weapon':
+        return await this.applyWeapon(bruteId, realId);
+      case 'skill':
+        return await this.applySkill(bruteId, realId);
+      default:
+        throw new BadRequestException(`Tipo de gratificación desconocido: ${choice.type}`);
+    }
+  }
+
+  /**
+   * Aplica una mejora de stats al bruto
+   */
+  private async applyStatBoost(bruteId: number, statBoostId: number) {
+    const statBoost = await this.statBoostPossibilityRepository.findOne({
+      where: { id: statBoostId }
+    });
+
+    if (!statBoost) {
+      throw new NotFoundException('Stat boost no encontrado');
+    }
+
+    const brute = await this.bruteService.getBruteById(bruteId);
+    if (!brute || !brute.stats || brute.stats.length === 0) {
+      throw new NotFoundException('Estadísticas del bruto no encontradas');
+    }
+
+    // Actualizar las estadísticas del bruto
+    const stat = brute.stats[0];
+    stat.hp += statBoost.hp || 0;
+    stat.strenght += statBoost.strength || 0;
+    stat.endurance += statBoost.resistance || 0;
+    stat.agility += statBoost.speed || 0;
+    stat.intelligence += statBoost.intelligence || 0;
+    
+    await this.statRepository.save(stat);
+
+    return {
+      description: `Aplicado: ${this.getStatBoostDescription(statBoost)}`,
+      appliedStats: {
+        hp: statBoost.hp || 0,
+        strength: statBoost.strength || 0,
+        resistance: statBoost.resistance || 0,
+        speed: statBoost.speed || 0,
+        intelligence: statBoost.intelligence || 0
+      }
+    };
+  }
+
+  /**
+   * Aplica un arma al bruto
+   */
+  private async applyWeapon(bruteId: number, weaponId: number) {
+    const weapon = await this.gratificationRepository.findOne({
+      where: { id: weaponId, type: 'weapon' }
+    });
+
+    if (!weapon) {
+      throw new NotFoundException('Arma no encontrada');
+    }
+
+    // Verificar que el bruto no tenga ya esta arma
+    const brute = await this.bruteService.getBruteById(bruteId);
+    const hasWeapon = brute?.bruteWeapons?.some(bw => bw.weapon.id === weaponId);
+    
+    if (hasWeapon) {
+      throw new BadRequestException('El bruto ya posee esta arma');
+    }
+
+    // Aquí deberías implementar la lógica para agregar el arma al bruto
+    // Por ahora solo retornamos la información
+
+    return {
+      description: `Nueva arma obtenida: ${weapon.name}`,
+      appliedWeapon: {
+        id: weapon.id,
+        name: weapon.name,
+        stats: weapon.value_json
+      }
+    };
+  }
+
+  /**
+   * Aplica una habilidad al bruto
+   */
+  private async applySkill(bruteId: number, skillId: number) {
+    const skill = await this.gratificationRepository.findOne({
+      where: { id: skillId, type: 'skill' }
+    });
+
+    if (!skill) {
+      throw new NotFoundException('Habilidad no encontrada');
+    }
+
+    // Verificar que el bruto no tenga ya esta habilidad
+    const brute = await this.bruteService.getBruteById(bruteId);
+    const hasSkill = brute?.bruteSkills?.some(bs => bs.skill.id === skillId);
+    
+    if (hasSkill) {
+      throw new BadRequestException('El bruto ya posee esta habilidad');
+    }
+
+    // Aquí deberías implementar la lógica para agregar la habilidad al bruto
+    // Por ahora solo retornamos la información
+
+    return {
+      description: `Nueva habilidad obtenida: ${skill.name}`,
+      appliedSkill: {
+        id: skill.id,
+        name: skill.name,
+        effects: skill.value_json
+      }
+    };
+  }
+  /**
+   * Registra la elección de gratificación en la base de datos
+   */
+  private async recordLevelChoice(bruteId: number, level: number, choice: GratificationChoiceDto) {
+    // Para stat_boost: "stat_boost_5" -> necesitamos el último elemento
+    // Para weapon: "weapon_3" -> necesitamos el segundo elemento  
+    // Para skill: "skill_7" -> necesitamos el segundo elemento
+    const parts = choice.id.split('_');
+    const realId = choice.type === 'stat_boost' ? 
+      parseInt(parts[parts.length - 1]) : // Para stat_boost toma el último elemento
+      parseInt(parts[1]); // Para weapon y skill toma el segundo elemento
+    
+    const choiceEntity = this.bruteLevelChoiceRepository.create({
+      brute: { id: bruteId },
+      level: level,
+      gratification: { id: realId }
+    });
+    
+    await this.bruteLevelChoiceRepository.save(choiceEntity);
+  }
+
+  // ================================
+  // UTILITY METHODS
+  // ================================
+
+  /**
    * Genera un nombre para una combinación de stat boost
-   * @param statBoost - objeto de stat boost
-   * @returns nombre descriptivo
    */
   private getStatBoostName(statBoost: StatBoostPossibility): string {
     const stats: string[] = [];
@@ -442,8 +478,6 @@ export class LevelService {
 
   /**
    * Genera descripción para una posibilidad de stat boost
-   * @param statBoost - posibilidad de stat boost
-   * @returns descripción legible
    */
   private getStatBoostDescription(statBoost: StatBoostPossibility): string {
     const improvements: string[] = [];
@@ -451,264 +485,63 @@ export class LevelService {
     if (statBoost.strength > 0) improvements.push(`+${statBoost.strength} Fuerza`);
     if (statBoost.resistance > 0) improvements.push(`+${statBoost.resistance} Resistencia`);
     if (statBoost.speed > 0) improvements.push(`+${statBoost.speed} Velocidad`);
-    if (statBoost.intelligence > 0) improvements.push(`+${statBoost.intelligence} Inteligencia`);
-
-    return improvements.join(', ');
+    if (statBoost.intelligence > 0) improvements.push(`+${statBoost.intelligence} Inteligencia`);    return improvements.join(', ');
   }
 
   /**
-   * Aplica la gratificación elegida al bruto
-   * @param gratificationChoice - objeto con tipo e ID de la gratificación
-   * @param bruteLevel - nivel actual del bruto (se incrementará a nivel + 1)
-   * @returns información sobre lo que se aplicó
+   * MÉTODO TEMPORAL DE DIAGNÓSTICO - Verificar inconsistencias en gratificaciones
    */
-  async applyChosenGratification(gratificationChoice: any, bruteLevel: number) {
-    const { type, id } = gratificationChoice;
-    const realId = parseInt(id.split('_')[1]); // Extraer ID real del formato "tipo_id"
+  async checkGratificationsConsistency() {
+    try {
+      // Verificar gratificaciones de tipo weapon que no tienen referencia en tabla weapons
+      const weaponGratifications = await this.gratificationRepository.find({
+        where: { type: 'weapon' }
+      });
 
-    switch (type) {
-      case 'stat_boost':
-        return await this.applyStatBoost(realId, bruteLevel);
-      
-      case 'weapon':
-        return await this.applyWeapon(realId, bruteLevel);
-      
-      case 'skill':
-        return await this.applySkill(realId, bruteLevel);
-      
-      default:
-        throw new Error(`Tipo de gratificación desconocido: ${type}`);
+      // Verificar gratificaciones de tipo skill que no tienen referencia en tabla skills  
+      const skillGratifications = await this.gratificationRepository.find({
+        where: { type: 'skill' }
+      });
+
+      // Verificar stat_boost_possibilities existentes
+      const statBoosts = await this.statBoostPossibilityRepository.find();
+
+      const result = {
+        weaponGratifications: weaponGratifications.map(w => ({
+          id: w.id,
+          name: w.name,
+          type: w.type,
+          min_level: w.min_level,
+          value_json: w.value_json
+        })),
+        skillGratifications: skillGratifications.map(s => ({
+          id: s.id,
+          name: s.name,
+          type: s.type,
+          min_level: s.min_level,
+          value_json: s.value_json
+        })),
+        statBoosts: statBoosts.map(sb => ({
+          id: sb.id,
+          hp: sb.hp,
+          strength: sb.strength,
+          resistance: sb.resistance,
+          speed: sb.speed,
+          intelligence: sb.intelligence,
+          min_level: sb.min_level
+        })),
+        summary: {
+          totalWeapons: weaponGratifications.length,
+          totalSkills: skillGratifications.length,
+          totalStatBoosts: statBoosts.length
+        }
+      };
+
+      return result;
+
+    } catch (error) {
+      console.error('Error en diagnóstico de gratificaciones:', error);
+      throw new BadRequestException('Error al verificar consistencia de gratificaciones');
     }
-  }
-
-  /**
-   * Aplica una mejora de stats al bruto
-   * @param statBoostId - ID del stat boost
-   * @param currentLevel - nivel actual del bruto
-   * @returns información sobre los stats aplicados
-   */
-  async applyStatBoost(statBoostId: number, currentLevel: number) {
-    const statBoost = await this.statBoostPossibilityRepository.findOne({
-      where: { id: statBoostId }
-    });
-
-    if (!statBoost) {
-      throw new Error('Stat boost no encontrado');
-    }
-
-    if (statBoost.min_level > currentLevel + 1) {
-      throw new Error('Stat boost no disponible para este nivel');
-    }
-
-    return {
-      newLevel: currentLevel + 1,
-      type: 'stat_boost',
-      appliedStats: {
-        hp: statBoost.hp,
-        strength: statBoost.strength,
-        resistance: statBoost.resistance,
-        speed: statBoost.speed,
-        intelligence: statBoost.intelligence
-      },
-      description: `Aplicado: ${this.getStatBoostDescription(statBoost)}`
-    };
-  }
-
-  /**
-   * Aplica un arma al bruto
-   * @param weaponId - ID del arma (gratificación)
-   * @param currentLevel - nivel actual del bruto
-   * @returns información sobre el arma aplicada
-   */
-  async applyWeapon(weaponId: number, currentLevel: number) {
-    const weapon = await this.gratificationRepository.findOne({
-      where: { id: weaponId, type: 'weapon' }
-    });
-
-    if (!weapon) {
-      throw new Error('Arma no encontrada');
-    }
-
-    if (weapon.min_level > currentLevel + 1) {
-      throw new Error('Arma no disponible para este nivel');
-    }
-
-    return {
-      newLevel: currentLevel + 1,
-      type: 'weapon',
-      appliedWeapon: {
-        id: weapon.id,
-        name: weapon.name,
-        stats: weapon.value_json
-      },
-      description: `Nueva arma obtenida: ${weapon.name}`
-    };
-  }
-
-  /**
-   * Aplica una habilidad al bruto
-   * @param skillId - ID de la habilidad (gratificación)
-   * @param currentLevel - nivel actual del bruto
-   * @returns información sobre la habilidad aplicada
-   */
-  async applySkill(skillId: number, currentLevel: number) {
-    const skill = await this.gratificationRepository.findOne({
-      where: { id: skillId, type: 'skill' }
-    });
-
-    if (!skill) {
-      throw new Error('Habilidad no encontrada');
-    }
-
-    if (skill.min_level > currentLevel + 1) {
-      throw new Error('Habilidad no disponible para este nivel');
-    }
-
-    return {
-      newLevel: currentLevel + 1,
-      type: 'skill',
-      appliedSkill: {
-        id: skill.id,
-        name: skill.name,
-        effects: skill.value_json
-      },
-      description: `Nueva habilidad obtenida: ${skill.name}`
-    };
-  }
-
-  /**
-   * Obtiene información completa de nivel para un bruto específico
-   * @param bruteId - ID del bruto
-   * @returns información detallada del nivel y experiencia
-   */
-  async getBruteLevelInfo(bruteId: number) {
-    const brute = await this.bruteService.getBruteById(bruteId);
-    
-    if (!brute) {
-      throw new Error('Bruto no encontrado');
-    }
-
-    const currentLevel = brute.level;
-    const currentExperience = brute.xp;
-    
-    // Obtener experiencia requerida para el nivel actual
-    const currentLevelExp = await this.levelExperienceRepository.findOne({
-      where: { level: currentLevel }
-    });
-    
-    // Obtener experiencia requerida para el siguiente nivel
-    const nextLevelExp = await this.levelExperienceRepository.findOne({
-      where: { level: currentLevel + 1 }
-    });
-    
-    const currentLevelBaseExp = currentLevel === 1 ? 0 : (currentLevelExp?.experience || this.calculateExperienceForLevel(currentLevel));
-    const nextLevelRequiredExp = nextLevelExp?.experience || this.calculateExperienceForLevel(currentLevel + 1);
-    
-    // Calcular progreso en el nivel actual
-    let experienceInCurrentLevel = 0;
-    let experienceNeededForNextLevel = 0;
-    let progressPercentage = 0;
-    let canLevelUp = false;
-    
-    if (currentLevel < 50 && nextLevelRequiredExp !== null) {
-      experienceInCurrentLevel = currentExperience - currentLevelBaseExp;
-      experienceNeededForNextLevel = nextLevelRequiredExp - currentLevelBaseExp;
-      progressPercentage = Math.floor((experienceInCurrentLevel / experienceNeededForNextLevel) * 100);
-      canLevelUp = currentExperience >= nextLevelRequiredExp;
-    } else {
-      // Nivel máximo alcanzado
-      progressPercentage = 100;
-    }    return {
-      bruteId: brute.id,
-      bruteName: brute.name,
-      currentLevel,
-      currentXp: currentExperience,
-      currentLevelXp: currentLevelBaseExp,
-      nextLevelXp: nextLevelRequiredExp,
-      progressPercentage,
-      canLevelUp,
-      blockedFromCombat: canLevelUp,
-      isMaxLevel: currentLevel >= 50
-    };
-  }
-  /**
-   * Automatically levels up a brute by choosing the first available stat boost
-   * @param bruteId - ID of the brute to level up
-   * @returns information about the level up result
-   */
-  async autoLevelUp(bruteId: number) {
-    const brute = await this.bruteService.getBruteById(bruteId);
-    if (!brute) {
-      throw new Error('Brute not found');
-    }
-
-    const levelInfo = await this.getBruteLevelInfo(bruteId);
-    if (!levelInfo.canLevelUp) {
-      throw new Error('Brute cannot level up yet');
-    }
-
-    // Get available gratifications for the next level
-    const gratifications = await this.getAvailableGratifications(brute.level + 1);
-    
-    // Find the first stat boost option
-    const statBoostOption = gratifications.find(g => g.type === 'stat_boost');
-    if (!statBoostOption) {
-      throw new Error('No stat boost options available');
-    }
-
-    // Apply the chosen gratification
-    const gratificationChoice = {
-      id: `stat_boost_${statBoostOption.data.id}`,
-      type: 'stat_boost' as const
-    };
-
-    const result = await this.applyChosenGratification(gratificationChoice, brute.level);
-
-    // Update brute level and stats in database
-    await this.updateBruteAfterLevelUp(bruteId, brute.level + 1, statBoostOption.data);
-
-    return {
-      success: true,
-      newLevel: brute.level + 1,
-      appliedGratification: result,
-      message: `${brute.name} has leveled up to level ${brute.level + 1}!`
-    };
-  }
-
-  /**
-   * Updates brute data after level up
-   * @param bruteId - ID of the brute
-   * @param newLevel - new level
-   * @param statBoost - stat boost to apply
-   */
-  private async updateBruteAfterLevelUp(bruteId: number, newLevel: number, statBoost: any) {
-    const brute = await this.bruteService.getBruteById(bruteId);
-    if (!brute) {
-      throw new Error('Brute not found');
-    }
-
-    // Update brute level
-    brute.level = newLevel;
-    await this.bruteRepository.save(brute);
-
-    // Update brute stats - access the first stat entry
-    if (brute.stats && brute.stats.length > 0) {
-      const stat = brute.stats[0];
-      stat.hp += statBoost.hp || 0;
-      stat.strenght += statBoost.strength || 0;
-      stat.endurance += statBoost.resistance || 0;
-      stat.agility += statBoost.speed || 0;
-      stat.intelligence += statBoost.intelligence || 0;
-      
-      await this.statRepository.save(stat);
-    }
-
-    // Record the choice in brute_level_choices
-    const choiceEntity = this.bruteLevelChoiceRepository.create({
-      brute: { id: bruteId },
-      level: newLevel,
-      gratification: { id: statBoost.id }
-    });
-    await this.bruteLevelChoiceRepository.save(choiceEntity);
   }
 }

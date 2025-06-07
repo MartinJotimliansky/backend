@@ -34,4 +34,7 @@ export class Weapon {
 
   @Column({ type: 'int', default: 0 })
   power_value: number;
+
+  @Column({ type: 'text', nullable: true })
+  description: string;
 }

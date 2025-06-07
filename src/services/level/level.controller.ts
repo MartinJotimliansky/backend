@@ -1,93 +1,71 @@
 import { Controller, Get, Post, Body, Param, ParseIntPipe } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { LevelService } from './level.service';
+import { LevelUpRequestDto } from './dto/level-up-request.dto';
+import { LevelInfoDto } from './dto/level-info.dto';
+import { GratificationOptionDto } from './dto/gratification-option.dto';
+import { LevelUpResultDto } from './dto/level-up-result.dto';
 
-export class LevelUpRequestDto {
-  bruteId: number;
-  gratificationChoice: {
-    id: string; // Formato: "tipo_id" ej: "stat_boost_1", "weapon_2", "skill_3"
-    type: 'stat_boost' | 'weapon' | 'skill';
-  };
-}
-
-export class LevelStatusDto {
-  bruteId: number;
-  currentExperience: number;
-  currentLevel: number;
-}
-
+@ApiTags('Level System')
 @Controller('level')
 export class LevelController {
   constructor(private readonly levelService: LevelService) {}
 
   /**
-   * Obtiene el estado de nivel detallado de un bruto
-   */
-  @Post('status')
-  async getLevelStatus(@Body() dto: LevelStatusDto) {
-    return this.levelService.getDetailedLevelInfo(
-      dto.currentExperience, 
-      dto.currentLevel
-    );
-  }  /**
-   * Obtiene información de nivel de un bruto específico
+   * Obtiene información completa de nivel de un bruto específico
    */
   @Get('brute/:bruteId')
-  async getBruteLevelInfo(@Param('bruteId', ParseIntPipe) bruteId: number) {
+  @ApiOperation({ summary: 'Obtener información de nivel de un bruto' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Información de nivel obtenida exitosamente', 
+    type: LevelInfoDto 
+  })
+  async getBruteLevelInfo(@Param('bruteId', ParseIntPipe) bruteId: number): Promise<LevelInfoDto> {
     return this.levelService.getBruteLevelInfo(bruteId);
   }
-
   /**
-   * Obtiene las 3 gratificaciones disponibles para elegir al subir de nivel
+   * Obtiene las gratificaciones disponibles para un bruto que puede subir de nivel
    */
-  @Get('gratifications/:level')
-  async getGratifications(@Param('level', ParseIntPipe) level: number) {
-    return this.levelService.getAvailableGratifications(level);
+  @Get('brute/:bruteId/gratifications')
+  @ApiOperation({ summary: 'Obtener opciones de gratificación disponibles para un bruto' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Opciones de gratificación obtenidas exitosamente', 
+    type: [GratificationOptionDto] 
+  })  async getAvailableGratifications(@Param('bruteId', ParseIntPipe) bruteId: number): Promise<GratificationOptionDto[]> {
+    // Primero obtenemos la información del bruto para conocer su nivel
+    const bruteInfo = await this.levelService.getBruteLevelInfo(bruteId);
+    return this.levelService.getAvailableGratifications(bruteInfo.currentLevel + 1, bruteId);
   }
 
   /**
-   * Aplica la gratificación elegida y sube de nivel
+   * Ejecuta el level-up de un bruto con la gratificación elegida
    */
   @Post('level-up')
-  async levelUp(@Body() dto: LevelUpRequestDto) {
-    return this.levelService.applyChosenGratification(
-      dto.gratificationChoice,
-      dto.bruteId
-    );
+  @ApiOperation({ summary: 'Subir de nivel con gratificación elegida' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Level-up ejecutado exitosamente', 
+    type: LevelUpResultDto 
+  })
+  @ApiResponse({ 
+    status: 400, 
+    description: 'Error en la validación (XP insuficiente, gratificación inválida, etc.)' 
+  })
+  @ApiResponse({ 
+    status: 404, 
+    description: 'Bruto no encontrado' 
+  })  async levelUp(@Body() dto: LevelUpRequestDto): Promise<LevelUpResultDto> {
+    return this.levelService.levelUpBrute(dto.bruteId, dto.gratificationChoice);
   }
 
   /**
-   * Sube de nivel automáticamente con una gratificación básica (para testing)
+   * ENDPOINT TEMPORAL PARA DIAGNÓSTICO - Verificar inconsistencias en gratificaciones
    */
-  @Post('brute/:bruteId/level-up')
-  async simpleLevelUp(@Param('bruteId', ParseIntPipe) bruteId: number) {
-    return this.levelService.autoLevelUp(bruteId);
-  }
-
-  /**
-   * Simula ganancia de experiencia
-   */
-  @Post('experience/simulate')
-  async simulateExperience(@Body() body: { currentExperience: number; won: boolean }) {
-    return this.levelService.updateExperience(
-      body.currentExperience, 
-      body.won
-    );
-  }
-
-  /**
-   * Valida que los datos de la base de datos coincidan con las fórmulas
-   */
-  @Get('validate')
-  async validateLevelData() {
-    const isValid = await this.levelService.validateLevelData();
-    return { valid: isValid };
-  }
-
-  /**
-   * Obtiene todos los niveles y experiencias (para debugging)
-   */
-  @Get('all')
-  async getAllLevels() {
-    return this.levelService.getAllLevelData();
+  @Get('debug/gratifications-check')
+  @ApiOperation({ summary: 'Verificar consistencia de gratificaciones en la base de datos' })
+  async checkGratificationsConsistency() {
+    return this.levelService.checkGratificationsConsistency();
   }
 }

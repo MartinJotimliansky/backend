@@ -3,6 +3,7 @@ import { FightRepository } from '../../repositories/fight.repository';
 import { Battle } from '../../entities/battle/battle.entity';
 import { BattleResultDto } from './dto/battle-result.dto';
 import { BattleLogDto } from './dto/battle-log.dto';
+import { BattleHistoryDto } from './dto/battle-history.dto';
 import { BruteResponseDto } from '../user/dto/brute-response.dto';
 import { StatCalculator } from '../../entities/battle/stat_calculator';
 import { Action, ActionType } from '../../entities/battle/action.entity';
@@ -63,6 +64,16 @@ export class FightService {
             healAmount: log.healAmount ?? 0,  // convertir undefined a 0
             attackerHp: log.attackerHp,
             defenderHp: log.defenderHp
+        };
+    }
+
+    private mapBattleToHistory(battle: Battle): BattleHistoryDto {
+        return {
+            id: battle.id,
+            attacker: this.mapBruteToBruteResponse(battle.bruteAttacker),
+            defender: this.mapBruteToBruteResponse(battle.bruteDefender),
+            winner: this.mapBruteToBruteResponse(battle.winnerBrute),
+            // No incluimos logs para optimizar rendimiento
         };
     }
 
@@ -281,9 +292,13 @@ export class FightService {
             });
             throw error;
         }
+    }    async getBattleHistory(bruteId: number): Promise<BattleHistoryDto[]> {
+        const battles = await this.fightRepository.findBattleHistoryByBruteId(bruteId);
+        return battles.map(battle => this.mapBattleToHistory(battle));
     }
 
-    async getBattleHistory(bruteId: number): Promise<BattleResultDto[]> {
+    async getBattleDetails(bruteId: number): Promise<BattleResultDto[]> {
+        // Método original que incluye los logs para casos donde se necesiten
         const battles = await this.fightRepository.findBattlesByBruteId(bruteId);
         return battles.map(battle => this.mapBattleToBattleResult(battle));
     }

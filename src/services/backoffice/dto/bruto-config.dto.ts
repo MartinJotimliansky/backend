@@ -31,9 +31,13 @@ export class BrutoConfigDto {
   @IsInt()
   @Min(0)
   min_health_points: number;
-
   @ApiProperty()
   @IsInt()
   @Min(0)
   max_health_points: number;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(1)
+  max_lvl: number;
 }

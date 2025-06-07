@@ -60,23 +60,27 @@ export class BruteRepository {
             .getRawMany();
 
         return this.findByIds(sameLevel.map(b => b.brute_id));
-    }
-
-    async findRandomOpponentsByLevelRange(
+    }    async findRandomOpponentsByLevelRange(
         minLevel: number,
         maxLevel: number,
         excludeIds: number[],
         excludeUserId: string,
         count: number
     ): Promise<Brute[]> {
-        const nearLevel = await this.bruteRepository
+        const queryBuilder = this.bruteRepository
             .createQueryBuilder('brute')
             .select('brute.id')
             .addSelect('RANDOM()', 'rand')
             .leftJoin('brute.user', 'user')
             .where('brute.level BETWEEN :minLevel AND :maxLevel', { minLevel, maxLevel })
-            .andWhere('brute.id NOT IN (:...excludeIds)', { excludeIds })
-            .andWhere('user.id != :excludeUserId', { excludeUserId })
+            .andWhere('user.id != :excludeUserId', { excludeUserId });
+
+        // Only add NOT IN filter if excludeIds has elements
+        if (excludeIds.length > 0) {
+            queryBuilder.andWhere('brute.id NOT IN (:...excludeIds)', { excludeIds });
+        }
+
+        const nearLevel = await queryBuilder
             .orderBy('rand')
             .take(count)
             .getRawMany();

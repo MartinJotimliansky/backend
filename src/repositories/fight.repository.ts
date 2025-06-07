@@ -40,9 +40,7 @@ export class FightRepository {
                 'logs'
             ]
         });
-    }
-
-    async findBattlesByBruteId(bruteId: number): Promise<Battle[]> {
+    }    async findBattlesByBruteId(bruteId: number): Promise<Battle[]> {
         return this.battleRepository.find({
             where: [
                 { bruteAttackerId: bruteId },
@@ -53,6 +51,39 @@ export class FightRepository {
                 'bruteDefender',
                 'winnerBrute',
                 'logs'
+            ],
+            order: {
+                id: 'DESC'
+            }
+        });
+    }
+
+    async findBattleHistoryByBruteId(bruteId: number): Promise<Battle[]> {
+        return this.battleRepository.find({
+            where: [
+                { bruteAttackerId: bruteId },
+                { bruteDefenderId: bruteId }
+            ],
+            relations: [
+                'bruteAttacker',
+                'bruteAttacker.stats',
+                'bruteAttacker.bruteSkills',
+                'bruteAttacker.bruteSkills.skill',
+                'bruteAttacker.bruteWeapons',
+                'bruteAttacker.bruteWeapons.weapon',
+                'bruteDefender',
+                'bruteDefender.stats',
+                'bruteDefender.bruteSkills',
+                'bruteDefender.bruteSkills.skill',
+                'bruteDefender.bruteWeapons',
+                'bruteDefender.bruteWeapons.weapon',
+                'winnerBrute',
+                'winnerBrute.stats',
+                'winnerBrute.bruteSkills',
+                'winnerBrute.bruteSkills.skill',
+                'winnerBrute.bruteWeapons',
+                'winnerBrute.bruteWeapons.weapon'
+                // Intencionalmente NO incluimos 'logs' para optimizar rendimiento
             ],
             order: {
                 id: 'DESC'

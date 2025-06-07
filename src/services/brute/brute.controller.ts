@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req, BadRequestException, Patch, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req, BadRequestException, Patch, UsePipes, ValidationPipe, ParseIntPipe } from '@nestjs/common';
 import { BruteService } from './brute.service';
 import { KeycloakLoginAuthGuard } from '../../auth/guards/keycloak-login-auth.guard';
 import { KeycloakAdminAuthGuard } from '../../auth/guards/keycloak-admin-auth.guard';
@@ -37,13 +37,16 @@ export class BruteController {
             name: brute.name,
             level: brute.level,
             xp: brute.xp,
-            gold: brute.gold,            rating: this.calculateBruteRating(brute),
+            gold: brute.gold,
+            rating: this.calculateBruteRating(brute),
             stats: brute.stats?.[0] ?? null,
             skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
             weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
             isSelected
         };
-    }    @Get('config')
+    }
+
+    @Get('config')
     @ApiOperation({ summary: 'Get brute configuration', description: 'Returns the brute configuration including max_brutes limit.' })
     async getBruteConfig(@Req() req: Request) {
         const userJwt = (req as any).user;
@@ -111,10 +114,81 @@ export class BruteController {
         }
     }
 
+    @Get('current/selected')
+    @ApiOperation({ summary: 'Get current selected brute', description: 'Returns the currently selected brute for the logged user.' })
+    @ApiOkResponse({ type: BruteResponseDto })
+    async getCurrentSelectedBrute(@Req() req: Request): Promise<BruteResponseDto> {
+        const userJwt = (req as any).user;
+        if (!userJwt || !userJwt.sub) {
+            throw new BadRequestException('Usuario no autenticado');
+        }
+
+        const user = await this.bruteService.getUserFromDb(userJwt.sub);
+        if (!user || !user.selected_brute_id) {
+            throw new BadRequestException('No hay un bruto seleccionado');
+        }
+
+        const brute = await this.bruteService.getBruteById(user.selected_brute_id);
+        if (!brute) {
+            throw new BadRequestException('Bruto no encontrado');
+        }
+
+        return this.mapBruteToResponse(brute, true);
+    }
+
+    @Get('static-data')
+    @ApiOperation({ 
+        summary: 'Get all static game data', 
+        description: 'Returns all static game data (weapons, skills, etc.) in a single request for optimization.' 
+    })
+    async getStaticGameData() {
+        const [weapons, skills, config] = await Promise.all([
+            this.bruteService.getAllWeapons(),
+            this.bruteService.getAllSkills(),
+            this.bruteService.getBruteConfig()
+        ]);
+
+        return {
+            weapons,
+            skills,
+            config: {
+                max_brutes: config.max_brutes,
+                base_hp: config.base_hp,
+                weapon_chance: config.weapon_chance
+            }
+        };
+    }
+
+    @Get('weapons')
+    @ApiOperation({ summary: 'Get all weapons', description: 'Returns all available weapons in the game.' })
+    async getAllWeapons() {
+        return this.bruteService.getAllWeapons();
+    }
+
+    @Get('skills')
+    @ApiOperation({ summary: 'Get all skills', description: 'Returns all available skills in the game.' })
+    async getAllSkills() {
+        return this.bruteService.getAllSkills();
+    }
+
+    @Post('generate-10')
+    @ApiOperation({ summary: 'Generate 10 random brutes', description: 'Creates 10 random brutes for testing and returns them.' })
+    async generate10Brutes() {
+        return this.bruteService.generateRandomBrutesForTesting();
+    }
+
+    @Delete()
+    @UseGuards(KeycloakAdminAuthGuard)
+    @ApiOperation({ summary: 'Delete all brutes', description: 'Deletes all brutes and their relations.' })
+    async deleteAllBrutes() {
+        await this.bruteService.deleteAllBrutes();
+        return { message: 'Todos los brutos eliminados' };
+    }
+
     @Get(':bruteId')
     @ApiOperation({ summary: 'Get brute by ID', description: 'Returns a brute from the database.' })
     @ApiOkResponse({ type: BruteResponseDto })
-    async getBruteById(@Param('bruteId') bruteId: number, @Req() req: Request): Promise<BruteResponseDto> {
+    async getBruteById(@Param('bruteId', ParseIntPipe) bruteId: number, @Req() req: Request): Promise<BruteResponseDto> {
         const userJwt = (req as any).user;
         if (!userJwt || !userJwt.sub) {
             throw new BadRequestException('Usuario no autenticado');
@@ -137,7 +211,7 @@ export class BruteController {
     @ApiOperation({ summary: 'Get brute opponents', description: 'Returns random opponents for the specified brute.' })
     @ApiOkResponse({ type: [BruteResponseDto] })
     async getBruteOpponents(
-        @Param('bruteId') bruteId: number,
+        @Param('bruteId', ParseIntPipe) bruteId: number,
         @Req() req: Request
     ): Promise<BruteResponseDto[]> {
         const userJwt = (req as any).user;
@@ -160,7 +234,7 @@ export class BruteController {
 
     @Patch(':bruteId/select')
     @ApiOperation({ summary: 'Select brute', description: 'Selects the active brute for the logged user.' })
-    async selectBrute(@Param('bruteId') bruteId: number, @Req() req: Request) {
+    async selectBrute(@Param('bruteId', ParseIntPipe) bruteId: number, @Req() req: Request) {
         const userJwt = (req as any).user;
         if (!userJwt || !userJwt.sub) throw new BadRequestException('Usuario no autenticado');
         return this.bruteService.selectBrute(userJwt.sub, bruteId);
@@ -168,7 +242,7 @@ export class BruteController {
 
     @Delete(':bruteId')
     @ApiOperation({ summary: 'Delete brute', description: 'Deletes a brute from the database.' })
-    async deleteBrute(@Param('bruteId') bruteId: number, @Req() req: Request) {
+    async deleteBrute(@Param('bruteId', ParseIntPipe) bruteId: number, @Req() req: Request) {
         const userJwt = (req as any).user;
         if (!userJwt || !userJwt.sub) throw new BadRequestException('Usuario no autenticado');
         
@@ -178,41 +252,5 @@ export class BruteController {
 
         await this.bruteService.deleteBrute(brute);
         return { message: 'Bruto eliminado' };
-    }
-
-    @Post('generate-10')
-    @ApiOperation({ summary: 'Generate 10 random brutes', description: 'Creates 10 random brutes for testing and returns them.' })
-    async generate10Brutes() {
-        return this.bruteService.generateRandomBrutesForTesting();
-    }
-
-    @Delete()
-    @UseGuards(KeycloakAdminAuthGuard)
-    @ApiOperation({ summary: 'Delete all brutes', description: 'Deletes all brutes and their relations.' })
-    async deleteAllBrutes() {
-        await this.bruteService.deleteAllBrutes();
-        return { message: 'Todos los brutos eliminados' };
-    }
-
-    @Get('current/selected')
-    @ApiOperation({ summary: 'Get current selected brute', description: 'Returns the currently selected brute for the logged user.' })
-    @ApiOkResponse({ type: BruteResponseDto })
-    async getCurrentSelectedBrute(@Req() req: Request): Promise<BruteResponseDto> {
-        const userJwt = (req as any).user;
-        if (!userJwt || !userJwt.sub) {
-            throw new BadRequestException('Usuario no autenticado');
-        }
-
-        const user = await this.bruteService.getUserFromDb(userJwt.sub);
-        if (!user || !user.selected_brute_id) {
-            throw new BadRequestException('No hay un bruto seleccionado');
-        }
-
-        const brute = await this.bruteService.getBruteById(user.selected_brute_id);
-        if (!brute) {
-            throw new BadRequestException('Bruto no encontrado');
-        }
-
-        return this.mapBruteToResponse(brute, true);
     }
 }

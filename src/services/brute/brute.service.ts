@@ -220,9 +220,8 @@ export class BruteService {
             // If we don't have enough of same level, get some from adjacent levels
             let remainingCount = count - sameLevelIds.length;
             let additionalBrutes: Brute[] = [];
-            
-            if (remainingCount > 0) {
-                additionalBrutes = await this.bruteRepository
+              if (remainingCount > 0) {
+                const queryBuilder = this.bruteRepository
                     .createQueryBuilder('brute')
                     .select('brute.id')
                     .addSelect('RANDOM()', 'rand')
@@ -231,8 +230,14 @@ export class BruteService {
                         maxLevel: brute.level + 1
                     })
                     .andWhere('brute.id != :bruteId', { bruteId })
-                    .andWhere('brute.id NOT IN (:...ids)', { ids: sameLevelIds })
-                    .andWhere('brute.user != :userId', { userId: brute.user.id })
+                    .andWhere('brute.user != :userId', { userId: brute.user.id });
+
+                // Only add NOT IN filter if sameLevelIds has elements
+                if (sameLevelIds.length > 0) {
+                    queryBuilder.andWhere('brute.id NOT IN (:...ids)', { ids: sameLevelIds });
+                }
+
+                additionalBrutes = await queryBuilder
                     .orderBy('rand')
                     .limit(remainingCount)
                     .getMany();
@@ -350,6 +355,18 @@ export class BruteService {
                 'bruteWeapons.weapon',
                 'user'
             ]
+        });
+    }
+
+    async getAllWeapons(): Promise<Weapon[]> {
+        return this.weaponRepo.find({
+            order: { name: 'ASC' }
+        });
+    }
+
+    async getAllSkills(): Promise<Skill[]> {
+        return this.skillRepo.find({
+            order: { name: 'ASC' }
         });
     }
 }
