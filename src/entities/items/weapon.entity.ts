@@ -29,8 +29,8 @@ export class Weapon {
   @Column({ type: 'int', default: 100 })
   speed: number;
 
-  @Column('int', { array: true, default: () => "'{}'" })
-  effect_ids: number[];
+  @Column('int', { array: true, name: 'effect_ids', default: () => "'{}'" })
+  effectIds: number[];
 
   @Column({ type: 'int', default: 0 })
   power_value: number;

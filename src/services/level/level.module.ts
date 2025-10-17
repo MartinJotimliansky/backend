@@ -6,6 +6,8 @@ import { BruteLevelChoice } from '../../entities/brute/brute_level_choice.entity
 import { Stat } from '../../entities/brute/stat.entity';
 import { Brute } from '../../entities/brute/brute.entity';
 import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
+import { Skill } from '../../entities/items/skill.entity';
+import { Weapon } from '../../entities/items/weapon.entity';
 import { LevelService } from './level.service';
 import { LevelController } from './level.controller';
 import { BruteModule } from '../brute/brute.module';
@@ -18,7 +20,9 @@ import { BruteModule } from '../brute/brute.module';
       BruteLevelChoice, 
       Stat, 
       Brute,
-      BrutoConfig
+      BrutoConfig,
+      Skill,
+      Weapon
     ]),
     BruteModule
   ],

@@ -9,8 +9,6 @@ import { BattleLog } from '../../entities/battle/battle_log.entity';
 import { Action } from '../../entities/battle/action.entity';
 import { Brute } from '../../entities/brute/brute.entity';
 import { Stat } from '../../entities/brute/stat.entity';
-import { BruteSkill } from '../../entities/brute/brute_skill.entity';
-import { BruteWeapon } from '../../entities/brute/brute_weapon.entity';
 import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
 import { User } from '../../entities/user.entity';
 
@@ -22,8 +20,6 @@ import { User } from '../../entities/user.entity';
       Action,
       Brute,
       Stat,
-      BruteSkill,
-      BruteWeapon,
       BrutoConfig,
       User
     ]),

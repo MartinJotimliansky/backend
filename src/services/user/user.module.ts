@@ -8,13 +8,11 @@ import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
 import { Stat } from '../../entities/brute/stat.entity';
 import { Weapon } from '../../entities/items/weapon.entity';
 import { Skill } from '../../entities/items/skill.entity';
-import { BruteWeapon } from '../../entities/brute/brute_weapon.entity';
-import { BruteSkill } from '../../entities/brute/brute_skill.entity';
 import { BruteService } from '../brute/brute.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([
-    User, Brute, BrutoConfig, Stat, Weapon, Skill, BruteWeapon, BruteSkill
+    User, Brute, BrutoConfig, Stat, Weapon, Skill
   ])],
   providers: [UserService, BruteService],
   controllers: [UserController],

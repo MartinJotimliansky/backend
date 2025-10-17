@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req, BadRequestException, Patch, UsePipes, ValidationPipe, ParseIntPipe } from '@nestjs/common';
 import { BruteService } from './brute.service';
+import { BruteJsonService } from './brute-json.service';
 import { KeycloakLoginAuthGuard } from '../../auth/guards/keycloak-login-auth.guard';
 import { KeycloakAdminAuthGuard } from '../../auth/guards/keycloak-admin-auth.guard';
 import { Brute } from '../../entities/brute/brute.entity';
@@ -16,7 +17,10 @@ import { Logger } from '@nestjs/common';
 export class BruteController {
     private readonly logger = new Logger(BruteController.name);
     
-    constructor(private readonly bruteService: BruteService) {}
+    constructor(
+        private readonly bruteService: BruteService,
+        private readonly bruteJsonService: BruteJsonService
+    ) {}
 
     private calculateBruteRating(brute: Brute): number {
         if (!brute.stats || brute.stats.length === 0) return 0;
@@ -24,14 +28,27 @@ export class BruteController {
         const stats = brute.stats[0];
         const baseStats = stats.strenght + stats.agility + stats.endurance + stats.intelligence;
         const hpBonus = Math.floor(stats.hp / 10);
-        const skillBonus = (brute.bruteSkills || []).length * 5;
-        const weaponBonus = (brute.bruteWeapons || []).length * 5;
+        const skillBonus = (brute.skill_ids?.length || 0) * 5;
+        const weaponBonus = (brute.weapon_ids?.length || 0) * 5;
         const levelBonus = brute.level * 10;
 
         return baseStats + hpBonus + skillBonus + weaponBonus + levelBonus;
-    }
+    }    private mapBruteToResponse(brute: Brute, isSelected: boolean = false): BruteResponseDto {
+        // Obtener skills y weapons usando el nuevo sistema JSON
+        let skills: any[] = [];
+        let weapons: any[] = [];
 
-    private mapBruteToResponse(brute: Brute, isSelected: boolean = false): BruteResponseDto {
+        try {
+            const skillIds = this.bruteJsonService.getBruteSkillIds(brute);
+            const weaponIds = this.bruteJsonService.getBruteWeaponIds(brute);
+
+            skills = skillIds.map(id => ({ id }));
+            weapons = weaponIds.map(id => ({ id }));
+        } catch (error) {
+            skills = [];
+            weapons = [];
+        }
+
         return {
             id: brute.id,
             name: brute.name,
@@ -40,8 +57,8 @@ export class BruteController {
             gold: brute.gold,
             rating: this.calculateBruteRating(brute),
             stats: brute.stats?.[0] ?? null,
-            skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
-            weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
+            skills,
+            weapons,
             isSelected
         };
     }

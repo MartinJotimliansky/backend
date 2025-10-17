@@ -4,8 +4,6 @@ import { Repository, In } from 'typeorm';
 import { Brute } from '../entities/brute/brute.entity';
 import { User } from '../entities/user.entity';
 import { Stat } from '../entities/brute/stat.entity';
-import { BruteSkill } from '../entities/brute/brute_skill.entity';
-import { BruteWeapon } from '../entities/brute/brute_weapon.entity';
 import { BrutoConfig } from '../entities/brute/bruto_config.entity';
 
 @Injectable()
@@ -17,10 +15,6 @@ export class BruteRepository {
         private bruteRepository: Repository<Brute>,
         @InjectRepository(Stat)
         private statRepository: Repository<Stat>,
-        @InjectRepository(BruteSkill)
-        private bruteSkillRepository: Repository<BruteSkill>,
-        @InjectRepository(BruteWeapon)
-        private bruteWeaponRepository: Repository<BruteWeapon>,
         @InjectRepository(BrutoConfig)
         private brutoConfigRepository: Repository<BrutoConfig>
     ) {}
@@ -30,10 +24,6 @@ export class BruteRepository {
             where: { id },
             relations: [
                 'stats',
-                'bruteSkills',
-                'bruteSkills.skill',
-                'bruteWeapons',
-                'bruteWeapons.weapon',
                 'user'
             ]
         });
@@ -60,7 +50,9 @@ export class BruteRepository {
             .getRawMany();
 
         return this.findByIds(sameLevel.map(b => b.brute_id));
-    }    async findRandomOpponentsByLevelRange(
+    }
+
+    async findRandomOpponentsByLevelRange(
         minLevel: number,
         maxLevel: number,
         excludeIds: number[],
@@ -93,10 +85,6 @@ export class BruteRepository {
             where: { id: In(ids) },
             relations: [
                 'stats',
-                'bruteSkills',
-                'bruteSkills.skill',
-                'bruteWeapons',
-                'bruteWeapons.weapon',
                 'user'
             ]
         });
@@ -112,37 +100,17 @@ export class BruteRepository {
         return this.statRepository.save(newStat);
     }
 
-    async createBruteSkill(bruteSkill: Partial<BruteSkill>): Promise<BruteSkill> {
-        const newBruteSkill = this.bruteSkillRepository.create(bruteSkill);
-        return this.bruteSkillRepository.save(newBruteSkill);
-    }
-
-    async createBruteWeapon(bruteWeapon: Partial<BruteWeapon>): Promise<BruteWeapon> {
-        const newBruteWeapon = this.bruteWeaponRepository.create(bruteWeapon);
-        return this.bruteWeaponRepository.save(newBruteWeapon);
-    }
-
     async getBrutoConfig(): Promise<BrutoConfig | null> {
         return this.brutoConfigRepository.findOne({ where: {} });
     }
 
     async delete(brute: Brute): Promise<void> {
-        await this.bruteRepository.manager.transaction(async manager => {
-            await manager.delete('brute_level_choices', { brute: brute.id });
-            await manager.delete('brute_skills', { brute: brute.id });
-            await manager.delete('brute_weapons', { brute: brute.id });
-            await manager.delete('brute_cosmetics', { brute: brute.id });
-            await manager.delete('purchases', { brute: brute.id });
-            await manager.delete('stats', { brute: brute.id });
-            await manager.delete('brutes', { id: brute.id });
-        });
+        await this.bruteRepository.remove(brute);
     }
 
     async deleteAll(): Promise<void> {
         await this.bruteRepository.manager.transaction(async manager => {
             await manager.query('DELETE FROM brute_level_choices');
-            await manager.query('DELETE FROM brute_skills');
-            await manager.query('DELETE FROM brute_weapons');
             await manager.query('DELETE FROM brute_cosmetics');
             await manager.query('DELETE FROM purchases');
             await manager.query('DELETE FROM stats');

@@ -7,7 +7,7 @@ export class BruteSkill {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => Brute, brute => brute.bruteSkills)
+  @ManyToOne(() => Brute)
   brute: Brute;
 
   @ManyToOne(() => Skill, { nullable: false })

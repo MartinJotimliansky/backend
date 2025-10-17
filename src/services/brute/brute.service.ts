@@ -7,8 +7,6 @@ import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
 import { Stat } from '../../entities/brute/stat.entity';
 import { Weapon } from '../../entities/items/weapon.entity';
 import { Skill } from '../../entities/items/skill.entity';
-import { BruteWeapon } from '../../entities/brute/brute_weapon.entity';
-import { BruteSkill } from '../../entities/brute/brute_skill.entity';
 
 @Injectable()
 export class BruteService {
@@ -21,9 +19,9 @@ export class BruteService {
         @InjectRepository(Stat) private statRepo: Repository<Stat>,
         @InjectRepository(Weapon) private weaponRepo: Repository<Weapon>,
         @InjectRepository(Skill) private skillRepo: Repository<Skill>,
-        @InjectRepository(BruteWeapon) private bruteWeaponRepo: Repository<BruteWeapon>,
-        @InjectRepository(BruteSkill) private bruteSkillRepo: Repository<BruteSkill>,
-    ) {}    async createBruteForUser(userId: string, name: string): Promise<Brute | null> {
+    ) {}
+
+    async createBruteForUser(userId: string, name: string): Promise<Brute | null> {
         try {
             this.logger.debug(`Creating brute for user ${userId}`);
             
@@ -70,16 +68,15 @@ export class BruteService {
 
     async getUserFromDb(userId: string) {
         return this.userRepository.findOne({ where: { id: userId } });
-    }    private validateBruteLimit(user: User) {
-        // Este método ahora será async y se llamará después de obtener la config
-        // Se mantendrá por compatibilidad pero ya no se usa el MAX_BRUTES hardcoded
     }
 
     private async validateBruteLimitWithConfig(user: User, config: BrutoConfig) {
         if (user.brutes && user.brutes.length >= config.max_brutes) {
             throw new BadRequestException(`Máximo ${config.max_brutes} brutos por usuario`);
         }
-    }    private async getBrutoConfig(): Promise<BrutoConfig> {
+    }
+
+    private async getBrutoConfig(): Promise<BrutoConfig> {
         const config = await this.brutoConfigRepo.findOne({ where: {} });
         if (!config) throw new BadRequestException('No hay configuración de brutos');
         return config;
@@ -147,8 +144,10 @@ export class BruteService {
 
         if (weapons.length > 0) {
             const weapon = weapons[Math.floor(Math.random() * weapons.length)];
-            const bruteWeapon = this.bruteWeaponRepo.create({ brute, weapon });
-            await this.bruteWeaponRepo.save(bruteWeapon);
+            // Asignar arma usando el campo JSON
+            if (!brute.weapon_ids) brute.weapon_ids = [];
+            brute.weapon_ids.push(weapon.id);
+            await this.bruteRepository.save(brute);
         }
     }
 
@@ -160,19 +159,10 @@ export class BruteService {
 
         if (skills.length > 0) {
             const skill = skills[Math.floor(Math.random() * skills.length)];
-            const bruteSkill = new BruteSkill();
-            bruteSkill.brute = brute;
-            bruteSkill.skill = skill;
-            
-            if (skill.activationTriggers && skill.activationTriggers.length > 0) {
-                bruteSkill.selectedTrigger = skill.activationTriggers[
-                    Math.floor(Math.random() * skill.activationTriggers.length)
-                ];
-            } else {
-                bruteSkill.selectedTrigger = null;
-            }
-
-            await this.bruteSkillRepo.save(bruteSkill);
+            // Asignar habilidad usando el campo JSON
+            if (!brute.skill_ids) brute.skill_ids = [];
+            brute.skill_ids.push(skill.id);
+            await this.bruteRepository.save(brute);
         }
     }
 
@@ -195,7 +185,7 @@ export class BruteService {
     async getRandomOpponents(bruteId: number, count: number): Promise<Brute[]> {
         try {
             this.logger.debug(`[getRandomOpponents] Starting search for opponents. BruteId: ${bruteId}, Count: ${count}`);
-              const brute = await this.getBruteById(bruteId);
+            const brute = await this.getBruteById(bruteId);
             if (!brute) {
                 this.logger.error(`[getRandomOpponents] Brute not found with id: ${bruteId}`);
                 throw new BadRequestException('Bruto no encontrado');
@@ -216,31 +206,28 @@ export class BruteService {
                 .getMany();
 
             const sameLevelIds = sameLevel.map(b => b.id);
-            
+
             // If we don't have enough of same level, get some from adjacent levels
             let remainingCount = count - sameLevelIds.length;
             let additionalBrutes: Brute[] = [];
-              if (remainingCount > 0) {
-                const queryBuilder = this.bruteRepository
+
+            if (remainingCount > 0) {
+                const qb = this.bruteRepository
                     .createQueryBuilder('brute')
                     .select('brute.id')
                     .addSelect('RANDOM()', 'rand')
-                    .where('brute.level BETWEEN :minLevel AND :maxLevel', { 
+                    .where('brute.level BETWEEN :minLevel AND :maxLevel', {
                         minLevel: Math.max(1, brute.level - 1),
                         maxLevel: brute.level + 1
                     })
                     .andWhere('brute.id != :bruteId', { bruteId })
-                    .andWhere('brute.user != :userId', { userId: brute.user.id });
-
-                // Only add NOT IN filter if sameLevelIds has elements
-                if (sameLevelIds.length > 0) {
-                    queryBuilder.andWhere('brute.id NOT IN (:...ids)', { ids: sameLevelIds });
-                }
-
-                additionalBrutes = await queryBuilder
+                    .andWhere('brute.user != :userId', { userId: brute.user.id })
                     .orderBy('rand')
-                    .limit(remainingCount)
-                    .getMany();
+                    .limit(remainingCount);
+                if (sameLevelIds.length > 0) {
+                    qb.andWhere('brute.id NOT IN (:...ids)', { ids: sameLevelIds });
+                }
+                additionalBrutes = await qb.getMany();
             }
 
             const allOpponentIds = [...sameLevelIds, ...additionalBrutes.map(b => b.id)];
@@ -250,10 +237,6 @@ export class BruteService {
                 where: { id: In(allOpponentIds) },
                 relations: [
                     'stats',
-                    'bruteSkills',
-                    'bruteSkills.skill',
-                    'bruteWeapons',
-                    'bruteWeapons.weapon',
                     'user'
                 ]
             });
@@ -270,10 +253,6 @@ export class BruteService {
             where: { id: bruteId },
             relations: [
                 'stats',
-                'bruteSkills',
-                'bruteSkills.skill',
-                'bruteWeapons',
-                'bruteWeapons.weapon',
                 'user'
             ]
         });
@@ -282,8 +261,6 @@ export class BruteService {
     async deleteBrute(brute: Brute): Promise<void> {
         await this.bruteRepository.manager.transaction(async manager => {
             await manager.delete('brute_level_choices', { brute: brute.id });
-            await manager.delete('brute_skills', { brute: brute.id });
-            await manager.delete('brute_weapons', { brute: brute.id });
             await manager.delete('brute_cosmetics', { brute: brute.id });
             await manager.delete('purchases', { brute: brute.id });
             await manager.delete('stats', { brute: brute.id });
@@ -294,8 +271,6 @@ export class BruteService {
     async deleteAllBrutes(): Promise<void> {
         await this.bruteRepository.manager.transaction(async manager => {
             await manager.query('DELETE FROM brute_level_choices');
-            await manager.query('DELETE FROM brute_skills');
-            await manager.query('DELETE FROM brute_weapons');
             await manager.query('DELETE FROM brute_cosmetics');
             await manager.query('DELETE FROM purchases');
             await manager.query('DELETE FROM stats');
@@ -349,24 +324,16 @@ export class BruteService {
         return this.bruteRepository.find({
             relations: [
                 'stats',
-                'bruteSkills',
-                'bruteSkills.skill',
-                'bruteWeapons',
-                'bruteWeapons.weapon',
                 'user'
             ]
         });
     }
 
     async getAllWeapons(): Promise<Weapon[]> {
-        return this.weaponRepo.find({
-            order: { name: 'ASC' }
-        });
+        return this.weaponRepo.find({ order: { name: 'ASC' } });
     }
 
     async getAllSkills(): Promise<Skill[]> {
-        return this.skillRepo.find({
-            order: { name: 'ASC' }
-        });
+        return this.skillRepo.find({ order: { name: 'ASC' } });
     }
 }

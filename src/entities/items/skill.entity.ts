@@ -5,14 +5,14 @@ export class Skill {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({nullable: true})
+  @Column({ type: 'text' })
   name: string;
 
   @Column('text', { array: true, name: 'activation_triggers', nullable: true })
   activationTriggers: string[];
 
-  @Column({ type: 'jsonb', name: 'effect_json', nullable: true })
-  effectJson: any;
+  @Column('int', { array: true, name: 'effect_ids', default: () => "'{}'" })
+  effectIds: number[];
 
   @Column({ type: 'boolean', default: false, nullable: true })
   is_passive: boolean;

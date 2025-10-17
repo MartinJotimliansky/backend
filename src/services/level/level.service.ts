@@ -7,7 +7,10 @@ import { BruteLevelChoice } from '../../entities/brute/brute_level_choice.entity
 import { Stat } from '../../entities/brute/stat.entity';
 import { Brute } from '../../entities/brute/brute.entity';
 import { BrutoConfig } from '../../entities/brute/bruto_config.entity';
+import { Skill } from '../../entities/items/skill.entity';
+import { Weapon } from '../../entities/items/weapon.entity';
 import { BruteService } from '../brute/brute.service';
+import { BruteJsonService } from '../brute/brute-json.service';
 import { LevelInfoDto } from './dto/level-info.dto';
 import { GratificationOptionDto } from './dto/gratification-option.dto';
 import { LevelUpResultDto } from './dto/level-up-result.dto';
@@ -28,7 +31,12 @@ export class LevelService {
     private bruteRepository: Repository<Brute>,
     @InjectRepository(BrutoConfig)
     private brutoConfigRepository: Repository<BrutoConfig>,
+    @InjectRepository(Skill)
+    private skillRepository: Repository<Skill>,    
+    @InjectRepository(Weapon)
+    private weaponRepository: Repository<Weapon>,
     private bruteService: BruteService,
+    private bruteJsonService: BruteJsonService,
   ) {}
 
   // ================================
@@ -102,7 +110,6 @@ export class LevelService {
   // ================================
   // GRATIFICATION METHODS
   // ================================
-
   /**
    * Obtiene las gratificaciones disponibles para un nivel específico
    * Filtra armas y habilidades que el bruto ya posee
@@ -116,9 +123,9 @@ export class LevelService {
       throw new NotFoundException('Bruto no encontrado');
     }
 
-    // Obtener IDs de armas y habilidades que ya tiene el bruto
-    const ownedWeaponIds = brute.bruteWeapons?.map(bw => bw.weapon.id) || [];
-    const ownedSkillIds = brute.bruteSkills?.map(bs => bs.skill.id) || [];
+    // Obtener IDs de armas y habilidades que ya tiene el bruto usando el nuevo sistema JSON
+    const ownedWeaponIds = this.bruteJsonService.getBruteWeaponIds(brute);
+    const ownedSkillIds = this.bruteJsonService.getBruteSkillIds(brute);
 
     const options: GratificationOptionDto[] = [];
 
@@ -285,12 +292,15 @@ export class LevelService {
     brute.xp = remainingExp; // La experiencia se "consume" al subir de nivel
     await this.bruteRepository.save(brute);
 
+    // Recargar el bruto actualizado para asegurar que los campos JSON estén correctos
+    const updatedBrute = await this.bruteService.getBruteById(bruteId);
+
     // Registrar la elección
     await this.recordLevelChoice(bruteId, newLevel, gratificationChoice);
 
     return {
       success: true,
-      newLevel: brute.level,
+      newLevel: updatedBrute?.level ?? brute.level,
       gratificationType: gratificationChoice.type,
       description: result.description,
       appliedStats: 'appliedStats' in result ? result.appliedStats : undefined,
@@ -364,70 +374,95 @@ export class LevelService {
         intelligence: statBoost.intelligence || 0
       }
     };
-  }
-
-  /**
+  }  /**
    * Aplica un arma al bruto
    */
   private async applyWeapon(bruteId: number, weaponId: number) {
-    const weapon = await this.gratificationRepository.findOne({
-      where: { id: weaponId, type: 'weapon' }
+    const weapon = await this.weaponRepository.findOne({
+      where: { id: weaponId }
     });
 
     if (!weapon) {
       throw new NotFoundException('Arma no encontrada');
     }
 
-    // Verificar que el bruto no tenga ya esta arma
+    // Obtener el bruto
     const brute = await this.bruteService.getBruteById(bruteId);
-    const hasWeapon = brute?.bruteWeapons?.some(bw => bw.weapon.id === weaponId);
+    if (!brute) {
+      throw new NotFoundException('Bruto no encontrado');
+    }
+
+    // Verificar que el bruto no tenga ya esta arma usando el nuevo sistema JSON
+    const hasWeapon = this.bruteJsonService.bruteHasWeapon(brute, weaponId);
     
     if (hasWeapon) {
       throw new BadRequestException('El bruto ya posee esta arma');
     }
 
-    // Aquí deberías implementar la lógica para agregar el arma al bruto
-    // Por ahora solo retornamos la información
+    // Agregar el arma usando el nuevo sistema JSON
+    await this.bruteJsonService.addWeaponToBrute(brute, weaponId, false); // Por defecto no equipado
+    await this.bruteRepository.save(brute);
 
     return {
       description: `Nueva arma obtenida: ${weapon.name}`,
       appliedWeapon: {
         id: weapon.id,
         name: weapon.name,
-        stats: weapon.value_json
+        stats: {
+          minDamage: weapon.min_damage,
+          maxDamage: weapon.max_damage,
+          critChance: weapon.crit_chance,
+          hitChance: weapon.hit_chance,
+          speed: weapon.speed,
+          effectIds: weapon.effectIds
+        }
       }
     };
-  }
-
-  /**
+  }  /**
    * Aplica una habilidad al bruto
    */
   private async applySkill(bruteId: number, skillId: number) {
-    const skill = await this.gratificationRepository.findOne({
-      where: { id: skillId, type: 'skill' }
+    const skill = await this.skillRepository.findOne({
+      where: { id: skillId }
     });
 
     if (!skill) {
       throw new NotFoundException('Habilidad no encontrada');
     }
 
-    // Verificar que el bruto no tenga ya esta habilidad
+    // Obtener el bruto
     const brute = await this.bruteService.getBruteById(bruteId);
-    const hasSkill = brute?.bruteSkills?.some(bs => bs.skill.id === skillId);
+    if (!brute) {
+      throw new NotFoundException('Bruto no encontrado');
+    }
+
+    // Verificar que el bruto no tenga ya esta habilidad usando el nuevo sistema JSON
+    const hasSkill = this.bruteJsonService.bruteHasSkill(brute, skillId);
     
     if (hasSkill) {
       throw new BadRequestException('El bruto ya posee esta habilidad');
+    }    // Seleccionar trigger aleatorio si la habilidad tiene triggers
+    let selectedTrigger: string | null = null;
+    if (skill.activationTriggers && skill.activationTriggers.length > 0) {
+      const randomIndex = Math.floor(Math.random() * skill.activationTriggers.length);
+      selectedTrigger = skill.activationTriggers[randomIndex];
     }
 
-    // Aquí deberías implementar la lógica para agregar la habilidad al bruto
-    // Por ahora solo retornamos la información
+    // Agregar la habilidad usando el nuevo sistema JSON
+    await this.bruteJsonService.addSkillToBrute(brute, skillId, selectedTrigger);
+    await this.bruteRepository.save(brute);
 
     return {
       description: `Nueva habilidad obtenida: ${skill.name}`,
       appliedSkill: {
         id: skill.id,
         name: skill.name,
-        effects: skill.value_json
+        effects: {
+          description: skill.description,
+          isPassive: skill.is_passive,
+          effectIds: skill.effectIds,
+          activationTriggers: skill.activationTriggers
+        }
       }
     };
   }

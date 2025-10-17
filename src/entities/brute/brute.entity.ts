@@ -1,8 +1,6 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { Stat } from './stat.entity';
 import { BruteLevelChoice } from './brute_level_choice.entity';
-import { BruteSkill } from './brute_skill.entity';
-import { BruteWeapon } from './brute_weapon.entity';
 import { BruteCosmetic } from './brute_cosmetic.entity';
 import { Purchase } from '../items/purchase.entity';
 import { User } from '../user.entity';
@@ -33,11 +31,18 @@ export class Brute {
   @OneToMany(() => BruteLevelChoice, choice => choice.brute)
   levelChoices: BruteLevelChoice[];
 
-  @OneToMany(() => BruteSkill, bruteSkill => bruteSkill.brute)
-  bruteSkills: BruteSkill[];
+  // Campos JSON para skills y weapons (nuevo diseño)
+  @Column({ type: 'json', nullable: true, default: '[]' })
+  skill_ids: number[];
 
-  @OneToMany(() => BruteWeapon, bruteWeapon => bruteWeapon.brute)
-  bruteWeapons: BruteWeapon[];
+  @Column({ type: 'json', nullable: true, default: '[]' })
+  weapon_ids: number[];
+
+  @Column({ type: 'json', nullable: true, default: '{}' })
+  skill_config: Record<string, any>; // Para triggers y otras configuraciones
+
+  @Column({ type: 'json', nullable: true, default: '{}' })
+  weapon_config: Record<string, any>; // Para equipped y otras configuraciones
 
   @OneToMany(() => BruteCosmetic, bruteCosmetic => bruteCosmetic.brute)
   bruteCosmetics: BruteCosmetic[];

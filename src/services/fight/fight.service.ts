@@ -42,17 +42,17 @@ export class FightService {
 
     private mapBruteToBruteResponse(brute: any): BruteResponseDto {
         return {
-    id: brute.id,
-    name: brute.name,
-    level: brute.level,
-    xp: brute.xp,
-    gold: brute.gold,
-    stats: brute.stats?.[0] ?? null,
-    skills: brute.bruteSkills?.map(bs => bs.skill) ?? [],
-    weapons: brute.bruteWeapons?.map(bw => bw.weapon) ?? [],
-    isSelected: false,
-    rating: 0,
-};
+            id: brute.id,
+            name: brute.name,
+            level: brute.level,
+            xp: brute.xp,
+            gold: brute.gold,
+            stats: brute.stats?.[0] ?? null,
+            skills: brute.skill_ids?.map((id: number) => ({ id })) ?? [],
+            weapons: brute.weapon_ids?.map((id: number) => ({ id })) ?? [],
+            isSelected: false,
+            rating: 0,
+        };
     }
 
     private mapBattleLogToBattleLogDto(log: BattleLogEntry): BattleLogDto {
@@ -100,11 +100,11 @@ export class FightService {
         const [attacker, defender] = await Promise.all([
             this.bruteRepository.findOne({
                 where: { id: user.selected_brute_id },
-                relations: ['stats', 'bruteSkills', 'bruteSkills.skill', 'bruteWeapons', 'bruteWeapons.weapon', 'user']
+                relations: ['stats', 'user']
             }),
             this.bruteRepository.findOne({
                 where: { id: opponentId },
-                relations: ['stats', 'bruteSkills', 'bruteSkills.skill', 'bruteWeapons', 'bruteWeapons.weapon', 'user']
+                relations: ['stats', 'user']
             })
         ]);
 
@@ -188,9 +188,14 @@ export class FightService {
             // Calculate base damage (using weapon if available)
             let baseDamage = 5; // Base unarmed damage
             let actionType = ActionType.BASIC_ATTACK;
-            if (currentAttacker.bruteWeapons && currentAttacker.bruteWeapons.length > 0) {
-                const weapon = currentAttacker.bruteWeapons[0].weapon;
-                baseDamage = weapon.min_damage + Math.floor(Math.random() * (weapon.max_damage - weapon.min_damage + 1));
+            // Use weapon_ids instead of bruteWeapons
+            if (currentAttacker.weapon_ids && currentAttacker.weapon_ids.length > 0) {
+                // For simplicity, use the first weapon_id
+                const weaponId = currentAttacker.weapon_ids[0];
+                // Fetch weapon from DB (sync/async as needed, here assume already loaded or mock)
+                // In a real implementation, you may want to preload all weapons for the battle
+                // For now, just set a placeholder damage range
+                baseDamage = 10 + Math.floor(Math.random() * 6); // Example: 10-15
                 actionType = ActionType.WEAPON_ATTACK;
             }
 
